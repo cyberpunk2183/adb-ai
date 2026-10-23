@@ -274,8 +274,8 @@ def cmd_mcp(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="adb-ai",
-        description="Control the Android devices in your home - TVs, TV boxes, phones, "
-                    "tablets - from a terminal or an AI agent.",
+        description="Control the Android devices in your home - TVs, TV boxes, "
+                    "phones and tablets - from a terminal or an AI agent.",
     )
     parser.add_argument("--version", action="version", version=f"adb-ai {__version__}")
     parser.add_argument("-d", "--device", dest="global_device", metavar="DEVICE",
