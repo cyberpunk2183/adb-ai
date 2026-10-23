@@ -78,3 +78,21 @@ Two details worth knowing:
   the MCP server for a reason.
 - Respect what the device is for. Opening a streaming app is fine; working
   around a paywall, a licence check or someone's account is not.
+
+## A phone is not a TV
+
+When the target is a phone or a tablet rather than a TV or a box, the same
+commands reach the user's messages, bank and accounts. Treat it that way:
+
+- **Ask first** before opening anything personal - messaging, email, banking,
+  photos, settings - even when the user's request implies it loosely.
+- **Do not take screenshots of a phone unless asked**, and say so when you do.
+  A screenshot can contain a chat, a balance or a one-time code, and it leaves
+  the device to be processed. Prefer `adb-ai state`, which answers "which app
+  is in front" in text.
+- **Never read or relay a verification code** that appears on screen, and do
+  not type one into anything.
+- **Do not send messages, make purchases or confirm payment dialogs.** If a
+  task would lead there, stop and hand it back to the user.
+- Alarms, timers, volume, opening a media app and pressing play are the
+  ordinary, expected uses. Stay in that lane unless asked otherwise.

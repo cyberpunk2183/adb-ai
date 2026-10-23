@@ -73,6 +73,57 @@ from the clone.
 Step-by-step for each system, including turning on debugging on the device:
 **[docs/INSTALL.md](docs/INSTALL.md)**.
 
+## Plug it into your agent
+
+This is the point of the project: one line, and your agent can drive your
+devices.
+
+**Claude Code**
+
+```bash
+claude mcp add adb-ai -- adb-ai mcp
+```
+
+**Claude Desktop** — `claude_desktop_config.json`
+
+```json
+{ "mcpServers": { "adb-ai": { "command": "adb-ai", "args": ["mcp"] } } }
+```
+
+**Codex CLI** — `~/.codex/config.toml`
+
+```toml
+[mcp_servers.adb_ai]
+command = "adb-ai"
+args = ["mcp"]
+```
+
+**Cursor** — `~/.cursor/mcp.json`
+
+```json
+{ "mcpServers": { "adb-ai": { "command": "adb-ai", "args": ["mcp"] } } }
+```
+
+Any other MCP client takes the same shape: run `adb-ai mcp`, talk JSON-RPC over
+stdio. Fifteen tools arrive — scan, connect, keys, apps, URLs, YouTube search,
+alarms, timers, volume, power, state and screenshots (returned as an image the
+model can look at).
+
+Then just ask, in whatever words you use at home:
+
+> *put on YouTube on the TV*
+> *pause whatever is playing*
+> *what's on the living-room screen?*
+> *set an alarm for 7:30 on my phone*
+
+Using Claude Code and prefer it to drive the CLI directly? Copy the skill:
+
+```bash
+mkdir -p ~/.claude/skills && cp -r skills/adb-ai ~/.claude/skills/
+```
+
+Details, per-client paths and troubleshooting: **[docs/AGENTS.md](docs/AGENTS.md)**.
+
 ## Turn on debugging on the device
 
 This is the step people get stuck on.
@@ -192,6 +243,11 @@ using ADB-AI; the short version is:
 - **ADB over TCP is unauthenticated** once allowed — never expose port 5555 to
   the internet, and turn debugging off when you are done;
 - it comes with **no warranty**; you run it, you own the outcome.
+
+**Pointing it at a phone is a bigger decision than pointing it at a TV.** ADB
+access to a phone is the same reach you have when it is unlocked in your hand —
+any app, any text field, a screenshot of anything on screen, one-time codes
+included. See [Phones are not TVs](DISCLAIMER.md#phones-are-not-tvs).
 
 Security policy and hardening checklist: **[SECURITY.md](SECURITY.md)**.
 

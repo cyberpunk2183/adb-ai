@@ -77,15 +77,40 @@ adb-ai off                                 # apaga a tela
 *No route to host*? Roda `adb-ai scan` e conecta de novo — é pra isso que o
 `scan` existe.
 
-## Usar com um agente de IA
+## Plugar no seu agente
 
-**Servidor MCP** (Claude Desktop, Cursor, qualquer cliente MCP):
+É pra isso que o projeto existe: uma linha, e seu agente controla seus
+aparelhos.
+
+**Claude Code**
+
+```bash
+claude mcp add adb-ai -- adb-ai mcp
+```
+
+**Claude Desktop** — `claude_desktop_config.json`
 
 ```json
 { "mcpServers": { "adb-ai": { "command": "adb-ai", "args": ["mcp"] } } }
 ```
 
-No Claude Code: `claude mcp add adb-ai -- adb-ai mcp`.
+**Codex CLI** — `~/.codex/config.toml`
+
+```toml
+[mcp_servers.adb_ai]
+command = "adb-ai"
+args = ["mcp"]
+```
+
+**Cursor** — `~/.cursor/mcp.json`
+
+```json
+{ "mcpServers": { "adb-ai": { "command": "adb-ai", "args": ["mcp"] } } }
+```
+
+Qualquer outro cliente MCP segue o mesmo formato. Chegam 15 ferramentas: achar
+na rede, conectar, teclas, apps, URLs, busca no YouTube, alarme, timer, volume,
+liga/desliga, estado e print (que volta como imagem pro modelo olhar).
 
 **Skill do Claude Code:**
 
@@ -130,6 +155,12 @@ de usar. Em resumo:
 - **ADB por TCP não tem autenticação** depois de autorizado — nunca exponha a
   porta 5555 na internet e desligue a depuração quando terminar;
 - vem **sem garantia nenhuma**: você roda, você assume o resultado.
+
+**Apontar isso para um celular é uma decisão bem maior que apontar para uma
+TV.** Acesso ADB a um celular é o mesmo alcance que você tem com ele destravado
+na mão: qualquer app, qualquer campo de texto, print de qualquer coisa na tela —
+inclusive código de 2FA. Leia
+[Phones are not TVs](DISCLAIMER.md#phones-are-not-tvs).
 
 Política de segurança e checklist: **[SECURITY.md](SECURITY.md)**.
 

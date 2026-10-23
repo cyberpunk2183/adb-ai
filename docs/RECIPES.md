@@ -125,6 +125,14 @@ and tablets.
 By default the alarm is created silently (`SKIP_UI`). Pass `--confirm` to open
 the clock app and let a human confirm it instead.
 
+> **Pointing this at a phone is a bigger decision than pointing it at a TV.**
+> Alarms live on phones, and ADB access to a phone is the same reach you have
+> when it is unlocked in your hand: opening your bank or your messages, typing
+> into them, and screenshotting whatever is on screen — including one-time
+> codes. Read **[Phones are not TVs](../DISCLAIMER.md#phones-are-not-tvs)**
+> before you enable debugging on your daily driver. A spare phone or an old
+> tablet is a much better place to experiment.
+
 ## Screenshots
 
 ```bash

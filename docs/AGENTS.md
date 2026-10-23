@@ -22,6 +22,16 @@ only — no `pip install mcp`, nothing to keep up to date.
 claude mcp add adb-ai -- adb-ai mcp
 ```
 
+### Codex CLI
+
+`~/.codex/config.toml`:
+
+```toml
+[mcp_servers.adb_ai]
+command = "adb-ai"
+args = ["mcp"]
+```
+
 ### Claude Desktop, Cursor, and other clients
 
 Add this to the client's MCP config
@@ -140,4 +150,11 @@ These commands move something physical in your house. Worth deciding up front:
   Anyone on that network can reach port 5555 — so keep it off guest Wi-Fi, and
   turn it off on the device when you are done experimenting.
 - **An agent has no idea what time it is in your living room.** Waking a TV at
-  3am is, technically, correct behaviour. Say so in your prompt if that matters.
+  3am is, technically, correct behaviour.
+- **A phone is not a TV.** Enabling debugging on the phone you actually use
+  hands the agent your unlocked device: any app, any text field, and a
+  screenshot of anything on screen — one-time codes included. Those screenshots
+  also leave your device for whatever model provider the agent uses. Prefer a
+  spare device, keep `ADBAI_ALLOW_SHELL` unset, and revoke the authorisation
+  when you are done. The full picture:
+  [Phones are not TVs](../DISCLAIMER.md#phones-are-not-tvs). Say so in your prompt if that matters.
