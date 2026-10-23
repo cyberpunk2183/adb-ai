@@ -90,6 +90,18 @@ commands reach the user's messages, bank and accounts. Treat it that way:
   A screenshot can contain a chat, a balance or a one-time code, and it leaves
   the device to be processed. Prefer `adb-ai state`, which answers "which app
   is in front" in text.
+- **Never screenshot a screen that lists the user's own content** - the notes
+  list, a chat list, the gallery, the call log, a file manager, the
+  notification shade. Permission to use an app is not permission to photograph
+  what is already in it. Capture only screens you created yourself: a blank
+  note you just opened, a calculator you just typed into.
+- **To check that something worked, use `adb-ai state`, not a screenshot.** It
+  answers which app and activity is in front, in text, with nothing personal
+  attached. Reach for a screenshot only when the question is genuinely visual
+  and the screen is one you made.
+- **To find a button to tap on a personal app, ask the user for the
+  coordinates** or have them describe the layout, rather than screenshotting a
+  screen full of their data.
 - **Never read or relay a verification code** that appears on screen, and do
   not type one into anything.
 - **Do not send messages, make purchases or confirm payment dialogs.** If a
