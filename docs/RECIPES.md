@@ -210,6 +210,9 @@ Worth knowing before you file a bug:
 - **Controlling a device that is off**, or asleep in a way that drops Wi-Fi.
   Most TVs do exactly that; wake it with its real remote once.
 - **Anything needing root** — this uses the ordinary shell user.
+- **Pairing an Android 11+ phone from an adb without mDNS** (Termux's build, for
+  one). Not a limitation of ADB-AI; see
+  [troubleshooting](TROUBLESHOOTING.md#adb-pair-fails-with-protocol-fault-couldnt-read-status-message).
 - **Streaming the screen.** Use [scrcpy](https://github.com/Genymobile/scrcpy)
   for mirroring; come back here for automation.
 - **Changing system settings broadly.** Deliberately out of scope: this is a

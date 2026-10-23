@@ -134,9 +134,32 @@ Manufacturers move this around. On Philips, Sony and TCL it is usually under
 Android 11 and newer need a one-time pairing with a code:
 
 ```bash
-adb pair 192.168.0.50:37123      # the port shown under "Pair device with pairing code"
-adb-ai connect 192.168.0.50
+adb pair 192.168.0.50:37123      # the port INSIDE the pairing dialog, not the one above it
+adb-ai connect 192.168.0.50:42701
 ```
+
+> **The pairing code flow needs an adb built with mDNS support.** Check yours:
+>
+> ```console
+> $ adb mdns check
+> mdns daemon version [10102001]      # good
+> adb: mdns is not supported by this version of adb.   # pairing will fail
+> ```
+>
+> Google's official platform-tools have it. Some distribution builds do not —
+> **Termux's `android-tools` is one of them**, so pairing from Termux fails with
+> `protocol fault (couldn't read status message)` no matter how fresh the code
+> is. Workaround: pair and enable TCP from a machine whose adb does support it,
+> once, over USB:
+>
+> ```bash
+> adb tcpip 5555          # on the computer, with the phone plugged in
+> ```
+>
+> After that the phone listens on the classic port 5555, which needs no
+> pairing, and Termux (or anything else) can `adb-ai connect <ip>` normally
+> until the phone reboots. TVs and boxes are unaffected — they use 5555
+> already.
 
 ### Already have a USB cable?
 

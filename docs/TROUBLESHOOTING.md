@@ -56,6 +56,31 @@ In order of likelihood:
 The address is stale — DHCP moved the device. `adb-ai scan` and connect again.
 This is normal and will keep happening; it is why `scan` exists.
 
+### `adb pair` fails with `protocol fault (couldn't read status message)`
+
+Your adb was built without mDNS support, and the Android 11+ pairing flow needs
+it. Confirm:
+
+```bash
+adb mdns check
+```
+
+If it answers *"mdns is not supported by this version of adb"*, no pairing code
+will ever work with that binary — the code is not the problem. This affects
+**Termux's `android-tools`** package, among others.
+
+Two ways out:
+
+1. **Pair from a machine with Google's official platform-tools**, then switch
+   the phone to the classic port, which needs no pairing at all:
+   ```bash
+   adb tcpip 5555      # once, with the phone connected by USB
+   ```
+   From then on `adb-ai connect <ip>` works from anywhere, including Termux,
+   until the phone reboots.
+2. **Use a device that already listens on 5555** — Android TVs and boxes
+   generally do once network debugging is on.
+
 ### `device unauthorized`
 
 The device is waiting for you to accept *Allow USB debugging?* on its screen.
