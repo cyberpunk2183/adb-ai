@@ -1,0 +1,21 @@
+# adbctl has no Python dependencies - on purpose.
+#
+# Everything here is standard library, so it runs the same on Windows, Linux,
+# macOS and Termux with any Python 3.9+. This file exists so that the usual
+#
+#     pip install -r requirements.txt
+#
+# works and tells you nothing is missing.
+#
+# The one real requirement is NOT a Python package: the `adb` binary from
+# Android platform-tools. Install it with your system's package manager:
+#
+#     Termux:   pkg install android-tools
+#     Debian:   sudo apt install adb
+#     Fedora:   sudo dnf install android-tools
+#     Arch:     sudo pacman -S android-tools
+#     macOS:    brew install android-platform-tools
+#     Windows:  winget install Google.PlatformTools
+#
+# Then check it with:  adb version
+# If adb lives somewhere unusual, point ADBCTL_ADB at the binary.

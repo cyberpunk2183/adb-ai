@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adbctl"
+version = "0.1.0"
+description = "Control the Android devices in your home - TVs, boxes, phones - from a terminal or an AI agent, over ADB."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+keywords = ["adb", "android", "android-tv", "mcp", "home-automation", "remote-control", "ai-agent"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Home Automation",
+  "Topic :: Utilities",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/GabrielAmaral/adbctl"
+Issues = "https://github.com/GabrielAmaral/adbctl/issues"
+
+[project.scripts]
+adbctl = "adbctl.cli:main"
+
+[tool.setuptools]
+packages = ["adbctl"]
+
+[tool.ruff]
+line-length = 100

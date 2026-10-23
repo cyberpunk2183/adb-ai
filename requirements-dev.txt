@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Optional, only for contributors. The test suite itself uses unittest from
+# the standard library, so `python -m unittest discover` needs none of this.
+ruff>=0.5
