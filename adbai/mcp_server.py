@@ -1,11 +1,11 @@
 """An MCP server over stdio, implemented with nothing but the standard library.
 
-Hand-rolling the protocol keeps ``pip install adbctl`` dependency-free, which
+Hand-rolling the protocol keeps ``pip install adb-ai`` dependency-free, which
 matters because this often runs on a phone, a Raspberry Pi or a Termux shell.
 
 Wire up in Claude Code / Claude Desktop / Cursor with:
 
-    {"mcpServers": {"adbctl": {"command": "adbctl", "args": ["mcp"]}}}
+    {"mcpServers": {"adb-ai": {"command": "adb-ai", "args": ["mcp"]}}}
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ PROTOCOL_VERSION = "2024-11-05"
 # Raw shell access is off unless the operator opts in: an agent that can run
 # any command on a device in your home is a different trust level from one
 # that can press Play.
-ALLOW_SHELL = os.environ.get("ADBCTL_ALLOW_SHELL", "").lower() in {"1", "true", "yes"}
+ALLOW_SHELL = os.environ.get("ADBAI_ALLOW_SHELL", "").lower() in {"1", "true", "yes"}
 
 
 def _text(message: str) -> dict[str, Any]:
@@ -89,6 +89,19 @@ def tool_youtube(args: dict[str, Any]) -> dict[str, Any]:
     return _text(f"searching YouTube for {args['query']!r}")
 
 
+def tool_set_alarm(args: dict[str, Any]) -> dict[str, Any]:
+    return _text(actions.set_alarm(
+        args["time"], serial=_device(args), label=args.get("label"),
+        days=args.get("days"),
+    ))
+
+
+def tool_set_timer(args: dict[str, Any]) -> dict[str, Any]:
+    return _text(actions.set_timer(
+        args["duration"], serial=_device(args), label=args.get("label"),
+    ))
+
+
 def tool_state(args: dict[str, Any]) -> dict[str, Any]:
     return _data(actions.state(_device(args)))
 
@@ -124,7 +137,7 @@ def tool_shell(args: dict[str, Any]) -> dict[str, Any]:
     if not ALLOW_SHELL:
         return _text(
             "raw shell is disabled. The operator can enable it by setting "
-            "ADBCTL_ALLOW_SHELL=1 in this server's environment."
+            "ADBAI_ALLOW_SHELL=1 in this server's environment."
         )
     return _text(adb.shell(args["command"], serial=_device(args), timeout=60.0))
 
@@ -218,6 +231,26 @@ TOOLS: list[dict[str, Any]] = [
         "handler": tool_youtube,
     },
     {
+        "name": "adb_set_alarm",
+        "description": "Set an alarm in the device's clock app. Phones and tablets only - "
+                       "most TVs have no clock app and the call will say so.",
+        "inputSchema": _schema({
+            "time": {"type": "string", "description": "7:30, 19:00"},
+            "label": {"type": "string", "description": "what the alarm is for"},
+            "days": {"type": "string", "description": "repeat, e.g. mon,tue,wed,thu,fri"},
+        }, ["time"]),
+        "handler": tool_set_alarm,
+    },
+    {
+        "name": "adb_set_timer",
+        "description": "Start a countdown timer in the device's clock app.",
+        "inputSchema": _schema({
+            "duration": {"type": "string", "description": "10m, 1h30m, 90s"},
+            "label": {"type": "string"},
+        }, ["duration"]),
+        "handler": tool_set_timer,
+    },
+    {
         "name": "adb_state",
         "description": "What is in the foreground, whether the screen is on, and whether "
                        "media is playing. Call this to check an action worked.",
@@ -250,7 +283,7 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "adb_shell",
         "description": "Run a raw adb shell command. Disabled unless the operator sets "
-                       "ADBCTL_ALLOW_SHELL=1.",
+                       "ADBAI_ALLOW_SHELL=1.",
         "inputSchema": _schema({"command": {"type": "string"}}, ["command"]),
         "handler": tool_shell,
     },
@@ -273,7 +306,7 @@ def _handle(request: dict[str, Any]) -> dict[str, Any] | None:
             "result": {
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "adbctl", "version": __version__},
+                "serverInfo": {"name": "adb-ai", "version": __version__},
             },
         }
 
@@ -297,7 +330,7 @@ def _handle(request: dict[str, Any]) -> dict[str, Any] | None:
             result = handler(params.get("arguments") or {})
         except Exception as exc:  # tool errors belong in the result, not the envelope
             detail = str(exc) or exc.__class__.__name__
-            if os.environ.get("ADBCTL_DEBUG"):
+            if os.environ.get("ADBAI_DEBUG"):
                 detail += "\n" + traceback.format_exc()
             result = {"content": [{"type": "text", "text": f"error: {detail}"}],
                       "isError": True}

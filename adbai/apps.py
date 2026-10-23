@@ -73,5 +73,5 @@ def resolve(name: str, serial: str | None = None) -> str:
         )
 
     raise LookupError(
-        f"no installed package matches {name!r}. Run 'adbctl apps' to list them."
+        f"no installed package matches {name!r}. Run 'adb-ai apps' to list them."
     )

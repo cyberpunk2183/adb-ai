@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 520" width="880" height="520" role="img" aria-label="Architecture: three front ends (CLI, MCP server, Claude Code skill) share one core, which drives the adb binary, which talks to devices over Wi-Fi or USB">
+  <defs>
+    <style>
+      text { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+      .t   { font-size: 14px; fill: #e6edf3; font-weight: 600; }
+      .s   { font-size: 11.5px; fill: #8b949e; }
+      .lbl { font-size: 11px; fill: #6e7681; }
+      .box { fill: #161b22; stroke: #30363d; stroke-width: 1.2; }
+      .core{ fill: #11213a; stroke: #1f6feb; stroke-width: 1.5; }
+      .dev { fill: #11261a; stroke: #238636; stroke-width: 1.2; }
+      .arr { stroke: #484f58; stroke-width: 1.6; fill: none; marker-end: url(#a); }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#484f58"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="880" height="520" rx="10" fill="#0d1117"/>
+
+  <text class="lbl" x="40" y="36">HOW YOU DRIVE IT</text>
+
+  <rect class="box" x="40" y="50" width="250" height="78" rx="8"/>
+  <text class="t" x="60" y="78">You, in a terminal</text>
+  <text class="s" x="60" y="100">adb-ai open netflix</text>
+  <text class="s" x="60" y="117">no agent involved</text>
+
+  <rect class="box" x="315" y="50" width="250" height="78" rx="8"/>
+  <text class="t" x="335" y="78">Any MCP client</text>
+  <text class="s" x="335" y="100">Claude Desktop, Cursor…</text>
+  <text class="s" x="335" y="117">15 tools over stdio</text>
+
+  <rect class="box" x="590" y="50" width="250" height="78" rx="8"/>
+  <text class="t" x="610" y="78">Claude Code skill</text>
+  <text class="s" x="610" y="100">"pause the TV"</text>
+  <text class="s" x="610" y="117">plain language</text>
+
+  <path class="arr" d="M165 128 V 185"/>
+  <path class="arr" d="M440 128 V 185"/>
+  <path class="arr" d="M715 128 V 185"/>
+
+  <rect class="core" x="40" y="190" width="800" height="118" rx="8"/>
+  <text class="t" x="60" y="218">adb-ai core · pure Python standard library</text>
+  <text class="s" x="60" y="244">discovery (scan)   ·   aliases &amp; default device   ·   friendly key names</text>
+  <text class="s" x="60" y="264">app aliases → package names   ·   state: foreground + screen + playback</text>
+  <text class="s" x="60" y="284">output parsed here, never with grep on the device   ·   screenshot repair</text>
+
+  <path class="arr" d="M440 308 V 356"/>
+  <text class="lbl" x="452" y="336">one subprocess call per action</text>
+
+  <rect class="box" x="290" y="360" width="300" height="56" rx="8"/>
+  <text class="t" x="310" y="386">the adb binary</text>
+  <text class="s" x="310" y="404">platform-tools — the only requirement</text>
+
+  <path class="arr" d="M360 416 L 215 452"/>
+  <path class="arr" d="M440 416 V 452"/>
+  <path class="arr" d="M520 416 L 665 452"/>
+  <text class="lbl" x="612" y="440">Wi-Fi (port 5555) or USB</text>
+
+  <rect class="dev" x="40" y="456" width="250" height="48" rx="8"/>
+  <text class="t" x="60" y="486">Android TV · box</text>
+
+  <rect class="dev" x="315" y="456" width="250" height="48" rx="8"/>
+  <text class="t" x="335" y="486">Phone · tablet</text>
+
+  <rect class="dev" x="590" y="456" width="250" height="48" rx="8"/>
+  <text class="t" x="610" y="486">Anything running Android</text>
+</svg>

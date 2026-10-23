@@ -3,13 +3,14 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "adbctl"
+name = "adb-ai"
 version = "0.1.0"
-description = "Control the Android devices in your home - TVs, boxes, phones - from a terminal or an AI agent, over ADB."
+description = "Universal remote for plugging your Android devices - TVs, boxes, phones - into your AI agent, over ADB. Works with Claude, Codex, Cursor or any MCP client."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
-keywords = ["adb", "android", "android-tv", "mcp", "home-automation", "remote-control", "ai-agent"]
+keywords = ["adb", "android", "android-tv", "mcp", "mcp-server", "home-automation",
+            "remote-control", "ai-agent", "claude", "codex", "llm-tools"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Console",
@@ -23,14 +24,14 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/cyberpunk2183/adbctl"
-Issues = "https://github.com/cyberpunk2183/adbctl/issues"
+Homepage = "https://github.com/cyberpunk2183/adb-ai"
+Issues = "https://github.com/cyberpunk2183/adb-ai/issues"
 
 [project.scripts]
-adbctl = "adbctl.cli:main"
+adb-ai = "adbai.cli:main"
 
 [tool.setuptools]
-packages = ["adbctl"]
+packages = ["adbai"]
 
 [tool.ruff]
 line-length = 100

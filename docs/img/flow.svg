@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 360" width="880" height="360" role="img" aria-label="What happens when you ask an agent to put YouTube on the TV: resolve the device, reconnect if the IP moved, resolve the app name to a package, launch it, then verify with a state check">
+  <defs>
+    <style>
+      text { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+      .n   { font-size: 13px; fill: #0d1117; font-weight: 700; }
+      .t   { font-size: 13px; fill: #e6edf3; }
+      .s   { font-size: 11px; fill: #8b949e; }
+      .q   { font-size: 14px; fill: #58a6ff; }
+      .box { fill: #161b22; stroke: #30363d; stroke-width: 1.2; }
+      .num { fill: #58a6ff; }
+      .arr { stroke: #484f58; stroke-width: 1.5; fill: none; marker-end: url(#b); }
+    </style>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#484f58"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="880" height="360" rx="10" fill="#0d1117"/>
+  <text class="q" x="40" y="42">“põe o YouTube na TV”</text>
+  <path class="arr" d="M40 56 V 82"/>
+
+  <rect class="box" x="40" y="88" width="800" height="44" rx="8"/>
+  <circle class="num" cx="64" cy="110" r="11"/><text class="n" x="60" y="115">1</text>
+  <text class="t" x="88" y="106">Which device? alias, default, or the only one connected</text>
+  <text class="s" x="88" y="124">target.resolve() — you never retype an address</text>
+
+  <rect class="box" x="40" y="142" width="800" height="44" rx="8"/>
+  <circle class="num" cx="64" cy="164" r="11"/><text class="n" x="60" y="169">2</text>
+  <text class="t" x="88" y="160">Not connected? reconnect; IP moved by DHCP? scan the subnet</text>
+  <text class="s" x="88" y="178">plain sockets, no nmap — identical on Windows and Termux</text>
+
+  <rect class="box" x="40" y="196" width="800" height="44" rx="8"/>
+  <circle class="num" cx="64" cy="218" r="11"/><text class="n" x="60" y="223">3</text>
+  <text class="t" x="88" y="214">“youtube” → com.google.android.youtube.tv (whichever build is installed)</text>
+  <text class="s" x="88" y="232">alias table first, then a fragment match against installed packages</text>
+
+  <rect class="box" x="40" y="250" width="800" height="44" rx="8"/>
+  <circle class="num" cx="64" cy="272" r="11"/><text class="n" x="60" y="277">4</text>
+  <text class="t" x="88" y="268">Launch it: monkey -p &lt;package&gt; -c android.intent.category.LAUNCHER 1</text>
+  <text class="s" x="88" y="286">deep links and searches go through am start instead</text>
+
+  <rect class="box" x="40" y="304" width="800" height="44" rx="8"/>
+  <circle class="num" cx="64" cy="326" r="11"/><text class="n" x="60" y="331">5</text>
+  <text class="t" x="88" y="322">Check the work: foreground app, screen state, playback state</text>
+  <text class="s" x="88" y="340">the agent confirms instead of assuming — one call, no screenshot needed</text>
+</svg>

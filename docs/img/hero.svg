@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 430" width="880" height="430" role="img" aria-label="Terminal session: scanning the network, connecting to a TV, opening YouTube and checking the state">
+  <defs>
+    <style>
+      .bg   { fill: #0d1117; }
+      .bar  { fill: #161b22; }
+      .edge { stroke: #30363d; stroke-width: 1; fill: none; }
+      text  { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+      .p    { fill: #3fb950; }
+      .cmd  { fill: #e6edf3; }
+      .out  { fill: #8b949e; }
+      .hi   { fill: #58a6ff; }
+      .ttl  { fill: #6e7681; font-size: 12px; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="880" height="430" rx="10"/>
+  <path class="bar" d="M0 10 a10 10 0 0 1 10 -10 h860 a10 10 0 0 1 10 10 v24 h-880 z"/>
+  <rect class="edge" x="0.5" y="0.5" width="879" height="429" rx="10"/>
+  <circle cx="20" cy="17" r="5" fill="#ff5f57"/>
+  <circle cx="38" cy="17" r="5" fill="#febc2e"/>
+  <circle cx="56" cy="17" r="5" fill="#28c840"/>
+  <text class="ttl" x="440" y="22" text-anchor="middle">adb-ai — living room, from the terminal</text>
+
+  <text x="22" y="66"><tspan class="p">$</tspan> <tspan class="cmd">adb-ai scan</tspan></text>
+  <text class="hi" x="22" y="90">192.168.0.42:5555</text>
+
+  <text x="22" y="126"><tspan class="p">$</tspan> <tspan class="cmd">adb-ai connect 192.168.0.42 --alias tv</tspan></text>
+  <text class="out" x="22" y="150">connected to 192.168.0.42:5555</text>
+  <text class="out" x="22" y="172">saved alias 'tv' -&gt; 192.168.0.42:5555</text>
+
+  <text x="22" y="208"><tspan class="p">$</tspan> <tspan class="cmd">adb-ai open youtube</tspan></text>
+  <text class="out" x="22" y="232">launched <tspan class="hi">com.google.android.youtube.tv</tspan></text>
+
+  <text x="22" y="268"><tspan class="p">$</tspan> <tspan class="cmd">adb-ai youtube "lofi hip hop"</tspan></text>
+  <text class="out" x="22" y="292">searching YouTube for 'lofi hip hop'</text>
+
+  <text x="22" y="328"><tspan class="p">$</tspan> <tspan class="cmd">adb-ai state</tspan></text>
+  <text class="out" x="22" y="352">foreground: com.google.android.youtube.tv/...MainActivity</text>
+  <text class="out" x="22" y="374">screen:     Awake</text>
+  <text x="22" y="396"><tspan class="out">playback:   </tspan><tspan class="p">playing</tspan></text>
+  <rect x="140" y="384" width="9" height="16" fill="#3fb950" opacity="0.9"/>
+</svg>

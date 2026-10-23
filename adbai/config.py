@@ -9,15 +9,15 @@ from typing import Any
 
 
 def config_dir() -> Path:
-    override = os.environ.get("ADBCTL_HOME")
+    override = os.environ.get("ADBAI_HOME")
     if override:
         return Path(override)
     appdata = os.environ.get("APPDATA")
     if appdata and os.name == "nt":
-        return Path(appdata) / "adbctl"
+        return Path(appdata) / "adb-ai"
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg else Path.home() / ".config"
-    return base / "adbctl"
+    return base / "adb-ai"
 
 
 def config_path() -> Path:

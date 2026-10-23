@@ -6,5 +6,5 @@ dist/
 .venv/
 venv/
 *.png
-!docs/*.png
+!docs/**
 .ruff_cache/

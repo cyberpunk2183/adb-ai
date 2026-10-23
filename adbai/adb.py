@@ -34,10 +34,10 @@ def _candidate_paths() -> Iterable[Path]:
 
 def adb_path() -> str:
     """Locate the adb executable, or explain how to get one."""
-    override = os.environ.get("ADBCTL_ADB") or os.environ.get("ADB")
+    override = os.environ.get("ADBAI_ADB") or os.environ.get("ADB")
     if override:
         if not Path(override).exists():
-            raise AdbError(f"ADBCTL_ADB points to a missing file: {override}")
+            raise AdbError(f"ADBAI_ADB points to a missing file: {override}")
         return override
 
     found = shutil.which("adb") or shutil.which("adb.exe")
@@ -50,7 +50,7 @@ def adb_path() -> str:
 
     raise AdbError(
         "adb not found. Install Android platform-tools and make sure 'adb' is on "
-        "your PATH, or point ADBCTL_ADB at the binary.\n"
+        "your PATH, or point ADBAI_ADB at the binary.\n"
         "  Termux:  pkg install android-tools\n"
         "  Debian:  sudo apt install adb\n"
         "  macOS:   brew install android-platform-tools\n"

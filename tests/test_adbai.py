@@ -1,5 +1,7 @@
 """Unit tests. Nothing here touches a real device or the network."""
 
+import contextlib
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -7,7 +9,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from adbctl import actions, adb, apps, keys  # noqa: E402
+from adbai import actions, adb, apps, cli, doctor, keys  # noqa: E402
 
 
 class TestKeys(unittest.TestCase):
@@ -27,10 +29,10 @@ class TestKeys(unittest.TestCase):
 
 class TestTargetNormalisation(unittest.TestCase):
     def test_ip_gets_default_port(self):
-        self.assertEqual(adb.normalise_target("192.168.0.102"), "192.168.0.102:5555")
+        self.assertEqual(adb.normalise_target("192.168.0.42"), "192.168.0.42:5555")
 
     def test_explicit_port_kept(self):
-        self.assertEqual(adb.normalise_target("192.168.0.102:5037"), "192.168.0.102:5037")
+        self.assertEqual(adb.normalise_target("192.168.0.42:5037"), "192.168.0.42:5037")
 
     def test_usb_serial_untouched(self):
         self.assertEqual(adb.normalise_target("R58M123ABCD"), "R58M123ABCD")
@@ -62,7 +64,7 @@ class TestScreencap(unittest.TestCase):
 class TestDeviceListing(unittest.TestCase):
     OUTPUT = (
         "List of devices attached\n"
-        "192.168.0.102:5555     device product:PH0M_LT_T32 model:Philips_TV\n"
+        "192.168.0.42:5555     device product:generic_tv model:Living_Room_TV\n"
         "R58M123ABCD            offline\n"
     )
 
@@ -71,8 +73,8 @@ class TestDeviceListing(unittest.TestCase):
             run.return_value = mock.Mock(stdout=self.OUTPUT, stderr="")
             found = adb.devices()
         self.assertEqual([d.serial for d in found],
-                         ["192.168.0.102:5555", "R58M123ABCD"])
-        self.assertEqual(found[0].model, "Philips TV")
+                         ["192.168.0.42:5555", "R58M123ABCD"])
+        self.assertEqual(found[0].model, "Living Room TV")
         self.assertTrue(found[0].online and found[0].is_network)
         self.assertFalse(found[1].online or found[1].is_network)
 
@@ -106,6 +108,36 @@ class TestAppResolution(unittest.TestCase):
             self.resolve("hbogo")
 
 
+class TestEnvironmentChecks(unittest.TestCase):
+    """A missing adb or an old Python must produce advice, not a traceback."""
+
+    def test_missing_adb_explains_how_to_install(self):
+        with mock.patch.object(adb.shutil, "which", return_value=None), \
+             mock.patch.dict("os.environ", {}, clear=True), \
+             mock.patch.object(adb, "_candidate_paths", return_value=[]):
+            with self.assertRaises(adb.AdbError) as caught:
+                adb.adb_path()
+        message = str(caught.exception)
+        self.assertIn("adb not found", message)
+        for hint in ("pkg install android-tools", "apt install adb", "winget"):
+            self.assertIn(hint, message)
+
+    def test_old_python_is_refused_with_advice(self):
+        with mock.patch.object(cli.sys, "version_info", (3, 8, 0)):
+            with self.assertRaises(SystemExit) as caught:
+                cli._check_python()
+        self.assertIn("needs Python 3.9", str(caught.exception))
+
+    def test_doctor_reports_missing_adb(self):
+        with mock.patch.object(doctor.adb, "adb_path",
+                               side_effect=adb.AdbError("adb not found")), \
+             contextlib.redirect_stdout(io.StringIO()) as printed:
+            code = doctor.run()
+        self.assertIn("adb not found", printed.getvalue())
+        self.assertIn("fix the FAIL lines", printed.getvalue())
+        self.assertEqual(code, 1)
+
+
 class TestShellQuoting(unittest.TestCase):
     def test_spaces_and_quotes_survive(self):
         with mock.patch.object(actions.adb, "shell") as shell:
@@ -118,6 +150,50 @@ class TestShellQuoting(unittest.TestCase):
         with mock.patch.object(actions.adb, "shell") as shell:
             actions.open_url("https://x.dev/a?b=1&c=2", serial="x")
         self.assertIn("'https://x.dev/a?b=1&c=2'", shell.call_args[0][0])
+
+
+class TestAlarms(unittest.TestCase):
+    STUB_ONLY = "  packageName=com.google.android.tv.frameworkpackagestubs\n"
+    REAL = ("  packageName=com.google.android.deskclock\n"
+            "  packageName=com.google.android.tv.frameworkpackagestubs\n")
+
+    def test_parse_clock(self):
+        self.assertEqual(actions.parse_clock("7"), (7, 0))
+        self.assertEqual(actions.parse_clock("19:30"), (19, 30))
+        self.assertEqual(actions.parse_clock("07h05"), (7, 5))
+        for bad in ("25:00", "abc", "7:99"):
+            with self.assertRaises(ValueError):
+                actions.parse_clock(bad)
+
+    def test_parse_duration(self):
+        self.assertEqual(actions.parse_duration("90"), 90)
+        self.assertEqual(actions.parse_duration("10m"), 600)
+        self.assertEqual(actions.parse_duration("1h30m"), 5400)
+        with self.assertRaises(ValueError):
+            actions.parse_duration("soon")
+
+    def test_tv_stub_is_not_a_clock_app(self):
+        """Android TV accepts the intent and drops it - that must not read as success."""
+        with mock.patch.object(actions.adb, "shell", return_value=self.STUB_ONLY):
+            self.assertIsNone(actions.alarm_handler())
+            with self.assertRaises(adb.AdbError) as caught:
+                actions.set_alarm("7:30")
+        self.assertIn("no clock app", str(caught.exception))
+
+    def test_real_clock_app_gets_the_intent(self):
+        sent = []
+
+        def fake_shell(cmd, serial=None, timeout=30.0):
+            sent.append(cmd)
+            return self.REAL if "query-activities" in cmd else "Starting: Intent"
+
+        with mock.patch.object(actions.adb, "shell", side_effect=fake_shell):
+            message = actions.set_alarm("7:30", label="wake up", days="mon,fri")
+        intent = sent[-1]
+        self.assertIn("--ei android.intent.extra.alarm.HOUR 7", intent)
+        self.assertIn("--ei android.intent.extra.alarm.MINUTES 30", intent)
+        self.assertIn("--eial android.intent.extra.alarm.DAYS 2,6", intent)
+        self.assertIn("07:30", message)
 
 
 class TestStateParsing(unittest.TestCase):

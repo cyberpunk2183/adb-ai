@@ -1,4 +1,4 @@
-"""Command line interface: ``adbctl <command> [...]``."""
+"""Command line interface: ``adb-ai <command> [...]``."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def cmd_devices(args: argparse.Namespace) -> int:
         _json([{"serial": d.serial, "state": d.state, "model": d.model} for d in found])
         return 0
     if not found:
-        _out("no devices. 'adbctl scan' looks for one on your network.")
+        _out("no devices. 'adb-ai scan' looks for one on your network.")
         return 0
     stored = config.load()
     for device in found:
@@ -163,6 +163,26 @@ def cmd_youtube(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_alarm(args: argparse.Namespace) -> int:
+    serial = target.resolve(args.device)
+    _out(actions.set_alarm(args.time, serial=serial, label=args.label,
+                           days=args.days, vibrate=not args.no_vibrate,
+                           confirm_on_device=args.confirm))
+    return 0
+
+
+def cmd_timer(args: argparse.Namespace) -> int:
+    serial = target.resolve(args.device)
+    _out(actions.set_timer(args.duration, serial=serial, label=args.label,
+                           confirm_on_device=args.confirm))
+    return 0
+
+
+def cmd_alarms(args: argparse.Namespace) -> int:
+    _out(actions.show_alarms(target.resolve(args.device)))
+    return 0
+
+
 def cmd_state(args: argparse.Namespace) -> int:
     serial = target.resolve(args.device)
     snapshot = actions.state(serial)
@@ -213,6 +233,12 @@ def cmd_shell(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from .doctor import run
+
+    return run()
+
+
 def cmd_mcp(args: argparse.Namespace) -> int:
     from .mcp_server import serve
 
@@ -224,11 +250,11 @@ def cmd_mcp(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="adbctl",
+        prog="adb-ai",
         description="Control the Android devices in your home - TVs, boxes, phones, "
                     "tablets - from a terminal or an AI agent.",
     )
-    parser.add_argument("--version", action="version", version=f"adbctl {__version__}")
+    parser.add_argument("--version", action="version", version=f"adb-ai {__version__}")
     parser.add_argument("-d", "--device", dest="global_device", metavar="DEVICE",
                         help="serial, ip[:port] or saved alias")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -293,6 +319,21 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("youtube", cmd_youtube, "search YouTube without the on-screen keyboard")
     p.add_argument("query", nargs="+")
 
+    p = add("alarm", cmd_alarm, "set an alarm in the device's clock app")
+    p.add_argument("time", help="7:30, 19:00, 07h05")
+    p.add_argument("--label", help="what the alarm is for")
+    p.add_argument("--days", help="repeat, e.g. mon,tue,wed,thu,fri")
+    p.add_argument("--no-vibrate", action="store_true")
+    p.add_argument("--confirm", action="store_true",
+                   help="open the clock app instead of creating it silently")
+
+    p = add("timer", cmd_timer, "start a countdown timer")
+    p.add_argument("duration", help="10m, 1h30m, 90s")
+    p.add_argument("--label")
+    p.add_argument("--confirm", action="store_true")
+
+    add("alarms", cmd_alarms, "open the clock app on its alarm list")
+
     p = add("state", cmd_state, "what is on screen and whether media is playing")
     p.add_argument("--json", action="store_true")
 
@@ -311,15 +352,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("command", nargs="+")
     p.add_argument("--timeout", type=float, default=60.0)
 
+    add("doctor", cmd_doctor, "check Python, adb, devices and config", device=False)
     add("mcp", cmd_mcp, "run the MCP server on stdio (for AI clients)", device=False)
 
     return parser
 
 
+MIN_PYTHON = (3, 9)
+
+
+def _check_python() -> None:
+    """Fail with a sentence a human can act on, not a traceback."""
+    if sys.version_info >= MIN_PYTHON:
+        return
+    have = ".".join(str(part) for part in sys.version_info[:3])
+    need = ".".join(str(part) for part in MIN_PYTHON)
+    raise SystemExit(
+        f"adb-ai needs Python {need} or newer, but this is Python {have}.\n"
+        "Install a newer one (python.org/downloads, 'brew install python', "
+        "'sudo apt install python3', 'pkg install python'), or run adb-ai with "
+        "it directly: python3.12 -m adbai"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
+    _check_python()
     parser = build_parser()
     args = parser.parse_args(argv)
-    # "adbctl -d tv key home" and "adbctl key home -d tv" mean the same thing:
+    # "adb-ai -d tv key home" and "adb-ai key home -d tv" mean the same thing:
     # a --device given before the subcommand must not lose to the subcommand's
     # own default of None.
     if getattr(args, "device", None) is None:
@@ -327,7 +387,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except (adb.AdbError, LookupError, ValueError) as exc:
-        print(f"adbctl: {exc}", file=sys.stderr)
+        print(f"adb-ai: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         return 130

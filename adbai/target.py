@@ -14,11 +14,11 @@ class NoDeviceError(adb.AdbError):
 def resolve(explicit: str | None = None, *, autoconnect: bool = True) -> str:
     """Work out the serial to act on.
 
-    Order of preference: the argument, ``ADBCTL_DEVICE``, the stored default,
+    Order of preference: the argument, ``ADBAI_DEVICE``, the stored default,
     the only connected device. Aliases are expanded, and a network target that
     is configured but not connected is connected on demand.
     """
-    candidate = explicit or os.environ.get("ADBCTL_DEVICE") or config.load()["default"]
+    candidate = explicit or os.environ.get("ADBAI_DEVICE") or config.load()["default"]
 
     if candidate:
         serial = adb.normalise_target(config.resolve_alias(candidate))
@@ -32,11 +32,11 @@ def resolve(explicit: str | None = None, *, autoconnect: bool = True) -> str:
         return online[0].serial
     if not online:
         raise NoDeviceError(
-            "no device connected. Try 'adbctl scan' to find one on the network, "
-            "then 'adbctl connect <ip>'."
+            "no device connected. Try 'adb-ai scan' to find one on the network, "
+            "then 'adb-ai connect <ip>'."
         )
     listing = "\n  ".join(d.describe() for d in online)
     raise NoDeviceError(
         "several devices are connected; pick one with --device or "
-        f"'adbctl use <serial>':\n  {listing}"
+        f"'adb-ai use <serial>':\n  {listing}"
     )

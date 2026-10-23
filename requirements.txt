@@ -1,4 +1,4 @@
-# adbctl has no Python dependencies - on purpose.
+# adb-ai has no Python dependencies - on purpose.
 #
 # Everything here is standard library, so it runs the same on Windows, Linux,
 # macOS and Termux with any Python 3.9+. This file exists so that the usual
@@ -18,4 +18,4 @@
 #     Windows:  winget install Google.PlatformTools
 #
 # Then check it with:  adb version
-# If adb lives somewhere unusual, point ADBCTL_ADB at the binary.
+# If adb lives somewhere unusual, point ADBAI_ADB at the binary.
