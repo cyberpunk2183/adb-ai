@@ -96,3 +96,7 @@ commands reach the user's messages, bank and accounts. Treat it that way:
   task would lead there, stop and hand it back to the user.
 - Alarms, timers, volume, opening a media app and pressing play are the
   ordinary, expected uses. Stay in that lane unless asked otherwise.
+- **An alarm you set cannot reliably be unset.** Most clock apps ignore the
+  dismiss intents, so deleting is a human's job in the clock app. Set exactly
+  what was asked for, say that you set it, and do not create extras "to be
+  safe".

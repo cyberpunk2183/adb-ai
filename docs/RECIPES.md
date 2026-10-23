@@ -125,6 +125,13 @@ and tablets.
 By default the alarm is created silently (`SKIP_UI`). Pass `--confirm` to open
 the clock app and let a human confirm it instead.
 
+**Creating is easy; cancelling is not.** Android has `DISMISS_ALARM` and
+`DISMISS_TIMER` intents, but clock apps are free to ignore them and many do —
+AOSP's own deskclock answers `Activity not started, unable to resolve Intent`.
+So an alarm set through ADB-AI may have to be deleted by hand in the clock app.
+Worth knowing before you let an agent set them freely: `adb-ai alarms` opens the
+list, and deleting is a human's job.
+
 > **Pointing this at a phone is a bigger decision than pointing it at a TV.**
 > Alarms live on phones, and ADB access to a phone is the same reach you have
 > when it is unlocked in your hand: opening your bank or your messages, typing
