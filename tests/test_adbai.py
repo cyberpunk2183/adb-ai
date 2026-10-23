@@ -196,6 +196,32 @@ class TestAlarms(unittest.TestCase):
         self.assertIn("07:30", message)
 
 
+class TestTouch(unittest.TestCase):
+    def test_tap_and_swipe_build_input_commands(self):
+        with mock.patch.object(actions.adb, "shell") as shell:
+            actions.tap(603, 1311, serial="x")
+            actions.swipe(360, 1200, 360, 400, serial="x", duration_ms=250)
+        self.assertEqual(shell.call_args_list[0][0][0], "input tap 603 1311")
+        self.assertEqual(shell.call_args_list[1][0][0], "input swipe 360 1200 360 400 250")
+
+    def test_screen_size(self):
+        with mock.patch.object(actions.adb, "shell",
+                               return_value="Physical size: 720x1640\n"):
+            self.assertEqual(actions.screen_size(), (720, 1640))
+
+    def test_scroll_uses_screen_size(self):
+        with mock.patch.object(actions, "screen_size", return_value=(720, 1640)), \
+             mock.patch.object(actions.adb, "shell") as shell:
+            actions.scroll("down", serial="x")
+        sent = shell.call_args[0][0]
+        self.assertTrue(sent.startswith("input swipe 360 "))
+
+    def test_scroll_rejects_nonsense(self):
+        with mock.patch.object(actions, "screen_size", return_value=(720, 1640)):
+            with self.assertRaises(ValueError):
+                actions.scroll("sideways")
+
+
 class TestStateParsing(unittest.TestCase):
     def test_current_app(self):
         dump = "  mCurrentFocus=Window{abc u0 com.netflix.ninja/com.netflix.Main}\n"

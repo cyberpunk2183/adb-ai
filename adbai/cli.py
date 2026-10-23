@@ -124,6 +124,29 @@ def cmd_text(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tap(args: argparse.Namespace) -> int:
+    _out(actions.tap(args.x, args.y, serial=target.resolve(args.device)))
+    return 0
+
+
+def cmd_swipe(args: argparse.Namespace) -> int:
+    _out(actions.swipe(args.x1, args.y1, args.x2, args.y2,
+                       serial=target.resolve(args.device), duration_ms=args.ms))
+    return 0
+
+
+def cmd_scroll(args: argparse.Namespace) -> int:
+    _out(actions.scroll(args.direction, serial=target.resolve(args.device),
+                        amount=args.amount))
+    return 0
+
+
+def cmd_size(args: argparse.Namespace) -> int:
+    width, height = actions.screen_size(target.resolve(args.device))
+    _out(f"{width}x{height}")
+    return 0
+
+
 def cmd_apps(args: argparse.Namespace) -> int:
     serial = target.resolve(args.device)
     packages = apps.installed(serial, third_party_only=not args.all)
@@ -301,6 +324,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("text", cmd_text, "type text into the focused field")
     p.add_argument("words", nargs="+")
+
+    p = add("tap", cmd_tap, "tap a point (phones and tablets)")
+    p.add_argument("x", type=int)
+    p.add_argument("y", type=int)
+
+    p = add("swipe", cmd_swipe, "swipe between two points, or long-press")
+    for name in ("x1", "y1", "x2", "y2"):
+        p.add_argument(name, type=int)
+    p.add_argument("--ms", type=int, default=300, help="duration in milliseconds")
+
+    p = add("scroll", cmd_scroll, "scroll up, down, left or right")
+    p.add_argument("direction", choices=["up", "down", "left", "right"])
+    p.add_argument("--amount", type=float, default=0.6,
+                   help="fraction of the screen to travel (0.1-0.9)")
+
+    add("size", cmd_size, "print the screen size in pixels")
 
     p = add("apps", cmd_apps, "list installed packages")
     p.add_argument("--all", action="store_true", help="include system packages")

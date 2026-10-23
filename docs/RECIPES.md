@@ -140,6 +140,34 @@ list, and deleting is a human's job.
 > before you enable debugging on your daily driver. A spare phone or an old
 > tablet is a much better place to experiment.
 
+## Phones: touch, not a d-pad
+
+A TV is navigated with the d-pad; a phone is navigated by touch. Both are here.
+
+```bash
+adb-ai size                      # 720x1640 - coordinates come from this
+adb-ai tap 603 1311
+adb-ai swipe 360 1200 360 400    # scroll up by dragging
+adb-ai swipe 360 800 360 800 --ms 800   # same point twice = long press
+adb-ai scroll down               # or up / left / right, no coordinates needed
+```
+
+The honest workflow for coordinates: take a screenshot, find the button in it,
+tap it. An agent does exactly the same — `adb_screenshot` then `adb_tap`.
+
+Here is the calculator driven entirely by taps, `144 ÷ 12`, with the result on
+screen:
+
+![The calculator app showing 144 divided by 12 equals 12, driven by taps over ADB](img/demo-phone-calculator.png)
+
+And a note typed into the notes app with `adb-ai text`:
+
+![A new note in the notes app containing the line "ADB-AI escreveu esta nota pelo terminal"](img/demo-phone-note.png)
+
+**Check the foreground before typing.** `adb-ai text` goes to whatever has
+focus right now — and on a phone someone is holding, that can change between
+two commands. `adb-ai state` first, then type.
+
 ## Screenshots
 
 ```bash

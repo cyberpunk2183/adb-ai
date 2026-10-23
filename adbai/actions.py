@@ -36,6 +36,48 @@ def type_text(text: str, serial: str | None = None) -> None:
     adb.shell(f"input text {_quote(payload)}", serial=serial)
 
 
+def screen_size(serial: str | None = None) -> tuple[int, int]:
+    """The display size in pixels, as (width, height)."""
+    out = adb.shell("wm size", serial=serial)
+    for line in out.splitlines():
+        if "size:" in line:  # "Physical size: 720x1640" or an override line
+            value = line.split(":", 1)[1].strip()
+            if "x" in value:
+                width, height = value.split("x", 1)
+                return int(width), int(height)
+    raise adb.AdbError(f"could not read the screen size: {out.strip() or 'no output'}")
+
+
+def tap(x: int, y: int, serial: str | None = None) -> str:
+    """Tap a point. Phones are driven by touch; TVs by the d-pad."""
+    adb.shell(f"input tap {int(x)} {int(y)}", serial=serial)
+    return f"tapped {int(x)},{int(y)}"
+
+
+def swipe(x1: int, y1: int, x2: int, y2: int, serial: str | None = None,
+          duration_ms: int = 300) -> str:
+    """Swipe between two points. Also a long press, when the points match."""
+    adb.shell(f"input swipe {int(x1)} {int(y1)} {int(x2)} {int(y2)} {int(duration_ms)}",
+              serial=serial)
+    return f"swiped {int(x1)},{int(y1)} -> {int(x2)},{int(y2)} in {int(duration_ms)}ms"
+
+
+def scroll(direction: str, serial: str | None = None, amount: float = 0.6) -> str:
+    """Scroll the screen by a fraction of its height or width."""
+    width, height = screen_size(serial)
+    cx, cy = width // 2, height // 2
+    span = int(min(width, height) * max(0.1, min(amount, 0.9)) / 2)
+    moves = {
+        "up": (cx, cy - span, cx, cy + span),
+        "down": (cx, cy + span, cx, cy - span),
+        "left": (cx - span, cy, cx + span, cy),
+        "right": (cx + span, cy, cx - span, cy),
+    }
+    if direction.lower() not in moves:
+        raise ValueError("scroll takes up, down, left or right")
+    return swipe(*moves[direction.lower()], serial=serial, duration_ms=250)
+
+
 def open_app(name: str, serial: str | None = None) -> str:
     """Launch an app by alias, package name, or fragment. Returns the package."""
     package = apps.resolve(name, serial=serial)
