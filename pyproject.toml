@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "adb-ai"
 version = "0.1.0"
-description = "Universal remote for plugging your Android devices - TVs, boxes, phones - into your AI agent, over ADB. Works with Claude, Codex, Cursor or any MCP client."
+description = "Universal remote for plugging your Android devices - TVs, TV boxes, phones - into your AI agent, over ADB. Works with Claude, Codex, Cursor or any MCP client."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"

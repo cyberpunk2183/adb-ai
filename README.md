@@ -2,7 +2,7 @@
 
 **A universal remote for plugging your Android gear into your AI agent.**
 
-Your TV, streaming box, phone or tablet — driven from the terminal, or by
+Your TV, TV box, phone or tablet — driven from the terminal, or by
 Claude, Codex, Cursor or any other agent that speaks MCP. One dependency-free
 Python package, the same on Windows, Linux, macOS and Termux.
 
@@ -140,7 +140,7 @@ Details, per-client paths and troubleshooting: **[docs/AGENTS.md](docs/AGENTS.md
 
 This is the step people get stuck on.
 
-- **Android TV / streaming box:** Settings → Device Preferences → About → click
+- **Android TV / TV box:** Settings → Device Preferences → About → click
   *Build* seven times → back → Developer options → enable **Network debugging**
   (sometimes *ADB debugging* / *USB debugging*).
 - **Phone or tablet:** Settings → About → tap *Build number* seven times →

@@ -6,7 +6,7 @@ do with it is your responsibility, not the authors'.
 
 ## What this project is for
 
-Letting people automate their own devices — a TV, a streaming box, a phone, a
+Letting people automate their own devices — a TV, a TV box, a phone, a
 tablet — from their own terminal or their own AI agent. Opening an app, pressing
 play, checking what is on screen, setting an alarm. The everyday things a remote
 control does, scriptable and available to an agent.
@@ -87,7 +87,7 @@ notification saying something just opened your messages.
 ### If you do it anyway
 
 - **Use a spare device** for anything experimental: an old phone, a tablet, a
-  test profile. A TV or a dedicated box is a much safer target than your daily
+  test profile. A TV or a dedicated TV box is a much safer target than your daily
   driver.
 - **Turn wireless debugging off when you are done.** On most phones it already
   resets at reboot; that is a feature, not an inconvenience.

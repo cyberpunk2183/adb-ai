@@ -1,6 +1,6 @@
 ---
 name: adb-ai
-description: Control Android devices in the user's home over ADB - a TV, a streaming box, a phone or a tablet. Use when the user asks to turn something on or off, open an app (Netflix, YouTube, Spotify...), play, pause, change the volume, navigate a menu, type into a field, see what is on the screen, or take a screenshot of a device. Also use when a device's IP has changed and needs to be found again.
+description: Control Android devices in the user's home over ADB - a TV, a TV box, a phone or a tablet. Use when the user asks to turn something on or off, open an app (Netflix, YouTube, Spotify...), play, pause, change the volume, navigate a menu, type into a field, see what is on the screen, or take a screenshot of a device. Also use when a device's IP has changed and needs to be found again.
 ---
 
 # Controlling devices over ADB
@@ -81,7 +81,7 @@ Two details worth knowing:
 
 ## A phone is not a TV
 
-When the target is a phone or a tablet rather than a TV or a box, the same
+When the target is a phone or a tablet rather than a TV or a TV box, the same
 commands reach the user's messages, bank and accounts. Treat it that way:
 
 - **Ask first** before opening anything personal - messaging, email, banking,

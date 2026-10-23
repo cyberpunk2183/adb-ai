@@ -158,7 +158,7 @@ adb-ai connect 192.168.0.50:42701
 >
 > After that the phone listens on the classic port 5555, which needs no
 > pairing, and Termux (or anything else) can `adb-ai connect <ip>` normally
-> until the phone reboots. TVs and boxes are unaffected — they use 5555
+> until the phone reboots. TVs and TV boxes are unaffected — they use 5555
 > already.
 
 ### Already have a USB cable?

@@ -2,7 +2,7 @@
 
 **Um controle universal para plugar seus aparelhos Android no seu agente de IA.**
 
-Sua TV, box, celular ou tablet — controlados pelo terminal, ou pelo Claude,
+Sua TV, TV box, celular ou tablet — controlados pelo terminal, ou pelo Claude,
 Codex, Cursor e qualquer outro agente que fale MCP. Um pacote Python sem
 dependência nenhuma, igual no Windows, Linux, macOS e Termux.
 

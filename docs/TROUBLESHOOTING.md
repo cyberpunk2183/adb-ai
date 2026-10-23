@@ -78,7 +78,7 @@ Two ways out:
    ```
    From then on `adb-ai connect <ip>` works from anywhere, including Termux,
    until the phone reboots.
-2. **Use a device that already listens on 5555** — Android TVs and boxes
+2. **Use a device that already listens on 5555** — Android TVs and TV boxes
    generally do once network debugging is on.
 
 ### `device unauthorized`

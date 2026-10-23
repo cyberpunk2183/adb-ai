@@ -57,7 +57,7 @@
   <text class="lbl" x="612" y="440">Wi-Fi (port 5555) or USB</text>
 
   <rect class="dev" x="40" y="456" width="250" height="48" rx="8"/>
-  <text class="t" x="60" y="486">Android TV · box</text>
+  <text class="t" x="60" y="486">Android TV · TV box</text>
 
   <rect class="dev" x="315" y="456" width="250" height="48" rx="8"/>
   <text class="t" x="335" y="486">Phone · tablet</text>
