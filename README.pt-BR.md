@@ -1,14 +1,34 @@
 # ADB-AI
 
-**Um controle universal para plugar seus aparelhos Android no seu agente de IA.**
+**Você fala. A casa obedece.**
 
-Sua TV, TV box, celular ou tablet — controlados pelo terminal, ou pelo Claude,
-Codex, Cursor e qualquer outro agente que fale MCP. Um pacote Python sem
-dependência nenhuma, igual no Windows, Linux, macOS e Termux.
+> *"põe o YouTube na TV"*
+> *"pausa isso aí"*
+> *"o que tá na tela da sala?"*
+> *"põe um alarme às 7:30 no meu celular"*
+
+O ADB-AI liga os aparelhos Android que você já tem — a TV, a TV box, o celular,
+o tablet — ao agente de IA que você já usa. Você pede com as suas palavras; o
+aparelho faz. Sem comprar hardware, sem conta na nuvem, sem app de fabricante:
+só a ponte de depuração que o Android traz de fábrica há quinze anos, embrulhada
+de um jeito que um agente consegue segurar o controle remoto.
+
+É o mais perto de ter um Jarvis na sala que dá pra montar em cinco minutos, com
+os aparelhos que já estão na sua casa.
 
 [Instalação](docs/INSTALL.md) · [Tutorial](docs/TUTORIAL.md) · [O que dá pra fazer](docs/RECIPES.md) · [Usar com IA](docs/AGENTS.md) · [Como funciona](docs/HOW-IT-WORKS.md) · [Problemas](docs/TROUBLESHOOTING.md) · [English](README.md)
 
 ![adb-ai no terminal: varre a rede, conecta na TV, abre o YouTube e confere se está tocando](docs/img/hero.svg)
+
+Um pacote Python sem dependência nenhuma, igual no Windows, Linux, macOS e
+Termux, com três portas de entrada:
+
+- um **servidor MCP** — pro Claude, Codex, Cursor ou qualquer coisa que fale
+  MCP. É esse que faz as frases lá de cima funcionarem.
+- uma **skill do Claude Code** — a mesma coisa, pra quem prefere que o agente
+  dirija a linha de comando.
+- uma **CLI** que funciona sozinha: `adb-ai open netflix`. Dá pra usar em script, e
+  serve pra você conferir que algo funciona antes de deixar um agente mexer.
 
 > A documentação detalhada está em inglês para alcançar mais gente. Este arquivo
 > cobre o essencial em português; os comandos são os mesmos.
@@ -52,7 +72,11 @@ clique em **Versão** sete vezes → volte → **Opções do desenvolvedor** →
 
 **Celular/tablet:** Configurações → Sobre → toque em **Número da versão** sete
 vezes → Opções do desenvolvedor → **Depuração sem fio**. No Android 11+ precisa
-parear uma vez: `adb pair IP:PORTA` com o código que a tela mostra.
+parear uma vez: `adb pair IP:PORTA` com o código que a tela mostra — use o
+IP:porta que aparece **dentro** do diálogo do código, que é diferente do de
+cima. Se der `protocol fault`, seu `adb` foi compilado sem mDNS (é o caso do
+Termux): confira com `adb mdns check` e veja a
+[solução](docs/TROUBLESHOOTING.md).
 
 Na primeira conexão **o aparelho mostra um aviso** perguntando se permite este
 computador. Marque *Sempre permitir* e aceite — sem isso não conecta.
@@ -60,20 +84,25 @@ computador. Marque *Sempre permitir* e aceite — sem isso não conecta.
 ## Primeiros comandos
 
 ```bash
-adb-ai doctor                              # está tudo certo?
-adb-ai scan                                # acha o aparelho na rede
+adb-ai doctor                             # está tudo certo?
+adb-ai scan                               # acha o aparelho na rede
 adb-ai connect 192.168.0.42 --alias tv    # conecta e salva o apelido "tv"
 
-adb-ai open youtube                        # abre app por apelido, pacote ou pedaço do nome
-adb-ai youtube "lofi hip hop"              # busca sem brigar com o teclado da tela
-adb-ai key down down ok                    # sequência de teclas
+adb-ai open youtube                       # abre app por apelido, pacote ou pedaço do nome
+adb-ai youtube "lofi hip hop"             # busca sem brigar com o teclado da tela
+adb-ai key down down ok                   # sequência de teclas (controle remoto)
+adb-ai tap 603 1311                       # toque, pra celular e tablet
+adb-ai scroll down                        # rolar a tela
+adb-ai text "oi"                          # digita no campo que está em foco
+adb-ai alarm 7:30 --label "Academia"      # alarme (celular/tablet; TV não tem relógio)
+adb-ai timer 10m                          # timer
 adb-ai volume up -n 3
-adb-ai state                               # o que está na tela e se está tocando
-adb-ai shot tela.png                       # screenshot
-adb-ai off                                 # apaga a tela
+adb-ai state                              # o que está na tela e se está tocando
+adb-ai shot tela.png                      # screenshot
+adb-ai off                                # apaga a tela
 ```
 
-**O IP vai mudar.** É DHCP: a TV que era `.102` ontem pode ser `.115` hoje. Deu
+**O IP vai mudar.** É DHCP: a TV que era `.42` ontem pode ser `.60` hoje. Deu
 *No route to host*? Roda `adb-ai scan` e conecta de novo — é pra isso que o
 `scan` existe.
 

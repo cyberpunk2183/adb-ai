@@ -1,21 +1,34 @@
 # ADB-AI
 
-**A universal remote for plugging your Android gear into your AI agent.**
+**Say it out loud. The room does the rest.**
 
-Your TV, TV box, phone or tablet — driven from the terminal, or by
-Claude, Codex, Cursor or any other agent that speaks MCP. One dependency-free
-Python package, the same on Windows, Linux, macOS and Termux.
+> *"put on YouTube on the TV"*
+> *"pause whatever is playing"*
+> *"what's on the living-room screen?"*
+> *"set an alarm for 7:30 on my phone"*
+
+ADB-AI plugs the Android devices you already own — the TV, the TV box, the
+phone, the tablet — into the AI agent you already use. You ask for something in
+your own words; the device does it. No new hardware, no cloud account, no
+vendor's app: just the debugging bridge your devices have shipped with for
+fifteen years, wrapped so an agent can hold the remote.
+
+It is the closest thing to a Jarvis for your living room that you can set up in
+five minutes, on devices you already have.
 
 [Install](docs/INSTALL.md) · [Tutorial](docs/TUTORIAL.md) · [What it can do](docs/RECIPES.md) · [Use with an AI agent](docs/AGENTS.md) · [How it works](docs/HOW-IT-WORKS.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Leia em português](README.pt-BR.md)
 
 ![adb-ai in a terminal: scan the network, connect to the TV, open YouTube, check that it is playing](docs/img/hero.svg)
 
-One command, no Python dependencies, same behaviour on Windows, Linux, macOS and
-Termux. Ships three ways to use it:
+One dependency-free Python package, identical on Windows, Linux, macOS and
+Termux, with three ways in:
 
-- a **CLI** you can use on its own: `adb-ai open netflix`
-- an **MCP server** for Claude Desktop, Claude Code, Cursor and friends
-- a **Claude Code skill**, so you can just say *"put on YouTube on the TV"*
+- an **MCP server** — for Claude, Codex, Cursor, or anything else that speaks
+  MCP. This is the one that makes the quotes above work.
+- a **Claude Code skill** — the same thing for people who would rather their
+  agent drove the command line.
+- a **CLI** you can use on its own: `adb-ai open netflix`. Scriptable, and
+  handy for checking something works before an agent touches it.
 
 ## It really works like that
 
@@ -31,7 +44,21 @@ the command line — all captured through ADB-AI itself:
 
 ## Requirements
 
-Two things, and `adb-ai doctor` checks both for you at any time:
+**Python 3.9+** and the **`adb` binary**. That is all — `requirements.txt` is
+deliberately empty of packages, because everything here is standard library.
+But **adb is not a Python package**, so `pip` cannot install it:
+
+| System | Command |
+|---|---|
+| Termux | `pkg install android-tools` |
+| Debian/Ubuntu | `sudo apt install adb` |
+| Fedora | `sudo dnf install android-tools` |
+| Arch | `sudo pacman -S android-tools` |
+| macOS | `brew install android-platform-tools` |
+| Windows | `winget install Google.PlatformTools` |
+
+`adb-ai doctor` checks the lot at any time, and tells you how to fix whatever
+is missing on your system:
 
 ```console
 $ adb-ai doctor
@@ -47,21 +74,7 @@ adb-ai 0.1.0 on Linux (Linux-6.8.0-x86_64-with-glibc2.39)
 ready to go.
 ```
 
-**Python 3.9+** and the **`adb` binary**. `requirements.txt` is deliberately empty of
-packages — everything is standard library — but **adb is not a Python package**,
-so install it with your system's package manager:
-
-| System | Command |
-|---|---|
-| Termux | `pkg install android-tools` |
-| Debian/Ubuntu | `sudo apt install adb` |
-| Fedora | `sudo dnf install android-tools` |
-| Arch | `sudo pacman -S android-tools` |
-| macOS | `brew install android-platform-tools` |
-| Windows | `winget install Google.PlatformTools` |
-
-Check it with `adb version`. If adb lives somewhere unusual, point `ADBAI_ADB`
-at the binary.
+If adb lives somewhere unusual, point `ADBAI_ADB` at the binary.
 
 ## Install
 
