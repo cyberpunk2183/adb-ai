@@ -53,7 +53,7 @@ at the binary.
 ## Install
 
 ```bash
-git clone https://github.com/GabrielAmaral/adbctl
+git clone https://github.com/cyberpunk2183/adbctl
 cd adbctl
 pip install -r requirements.txt   # confirms there is nothing to install
 pip install .                     # or: pipx install .

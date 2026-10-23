@@ -23,8 +23,8 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/GabrielAmaral/adbctl"
-Issues = "https://github.com/GabrielAmaral/adbctl/issues"
+Homepage = "https://github.com/cyberpunk2183/adbctl"
+Issues = "https://github.com/cyberpunk2183/adbctl/issues"
 
 [project.scripts]
 adbctl = "adbctl.cli:main"
