@@ -20,6 +20,11 @@ it says so — a TV is not a phone, and both lie about some things.
 
 ## Watch something
 
+The Android TV launcher, captured over the network with `adb-ai shot` — this is
+the "menu" you are driving when you send `home`, `down` and `ok`:
+
+![The Android TV home screen, captured over ADB](img/demo-tv-home.png)
+
 ```bash
 adb-ai open youtube                  # by alias
 adb-ai open com.netflix.ninja        # by package
@@ -110,6 +115,11 @@ adb-ai timer 10m --label "Pizza"
 adb-ai timer 1h30m
 adb-ai alarms                 # open the clock app's list
 ```
+
+A timer started from the terminal, running in the phone's clock app with the
+label it was given:
+
+![The clock app counting down from ten minutes, labelled ADB-AI](img/demo-phone-timer.png)
 
 **Phones and tablets only.** Android TV ships a stub that accepts the alarm
 intent and silently throws it away, so "it worked" would be a lie — ADB-AI

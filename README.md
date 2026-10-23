@@ -17,6 +17,18 @@ Termux. Ships three ways to use it:
 - an **MCP server** for Claude Desktop, Claude Code, Cursor and friends
 - a **Claude Code skill**, so you can just say *"put on YouTube on the TV"*
 
+## It really works like that
+
+A TV's launcher, a phone's calculator driven only by taps, and a timer set from
+the command line — all captured through ADB-AI itself:
+
+| | |
+|---|---|
+| ![Android TV home screen](docs/img/demo-tv-home.png) | ![Calculator showing 144 divided by 12](docs/img/demo-phone-calculator.png) |
+| The TV menu you drive with `home`, `down`, `ok` | `144 ÷ 12`, typed with `adb-ai tap` |
+| ![Clock app counting down from ten minutes](docs/img/demo-phone-timer.png) | ![A note typed into the notes app](docs/img/demo-phone-note.png) |
+| `adb-ai timer 10m --label ADB-AI` | `adb-ai text` into a new note |
+
 ## Requirements
 
 Two things, and `adb-ai doctor` checks both for you at any time:
