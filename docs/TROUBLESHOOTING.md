@@ -133,6 +133,16 @@ adb-ai state
 `playback: playing` is the proof. Many apps need an explicit `adb-ai key ok` or
 `adb-ai key play` after launching.
 
+### `playback: no media session` while something is clearly playing
+
+Not a bug, and not fixable from here: the app is not publishing a media
+session, so the system has nothing to report. `dumpsys media_session` says
+"have 0 sessions" on devices where this happens, whatever is on screen.
+
+Read it as "cannot tell", never as "nothing is playing". A screenshot is the
+only reliable answer for an app like that, and `adb-ai key play` still works -
+the keycode goes to whatever has focus, with or without a session.
+
 ### `foreground: unknown (transition?)`
 
 Harmless. The window manager has no focused window for a moment while an app

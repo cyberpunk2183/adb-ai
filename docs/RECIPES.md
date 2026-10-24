@@ -226,7 +226,12 @@ playback:   no media session
   second after switching apps; ask again.
 - `screen` — `Awake`, `Asleep`, `Dozing`.
 - `playback` — from the active media session. `playing`, `paused`, `buffering`,
-  or `no media session`. **An app being open is not playback.**
+  or `no media session`. **An app being open is not playback** — and the
+  reverse is just as important: plenty of apps never publish a media session at
+  all, so `no media session` means *cannot tell*, not *nothing is playing*.
+  Checked on a TV with a video on screen: `dumpsys media_session` answered
+  "have 0 sessions". When you need certainty on an app like that, a screenshot
+  is the only honest answer.
 
 ## Several devices at once
 

@@ -71,6 +71,10 @@ Two details worth knowing:
   action failed.
 - An app being open does not mean something is playing. `playback: playing` is
   the proof that it is.
+- `playback: no media session` means **"cannot tell"**, not "nothing is
+  playing". Many apps never publish a media session - a TV with a film on
+  screen can report zero sessions. Never tell the user nothing is playing on
+  that basis: say you cannot tell from the state, and offer a screenshot.
 
 ## Working with the user
 
