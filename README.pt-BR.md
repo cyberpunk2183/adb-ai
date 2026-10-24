@@ -20,6 +20,13 @@ os aparelhos que já estão na sua casa.
 
 ![adb-ai no terminal: varre a rede, conecta na TV, abre o YouTube e confere se está tocando](docs/img/hero.svg)
 
+### Dois aparelhos ao mesmo tempo
+
+O agente pesquisa "eminem" no YouTube da TV enquanto, no celular, abre o Termux,
+roda `pkg update` e põe um timer de 15 minutos — tudo na mesma sessão.
+
+![adb-ai controlando uma TV e um celular ao mesmo tempo: busca no YouTube na TV, Termux e um timer no celular](docs/img/adb-ai-demo.gif)
+
 Um pacote Python sem dependência nenhuma, igual no Windows, Linux, macOS e
 Termux, com três portas de entrada:
 

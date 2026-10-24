@@ -20,6 +20,13 @@ five minutes, on devices you already have.
 
 ![adb-ai in a terminal: scan the network, connect to the TV, open YouTube, check that it is playing](docs/img/hero.svg)
 
+### See it drive two devices at once
+
+The agent searches YouTube for "eminem" on the TV while, on the phone, it opens
+Termux, runs `pkg update`, and sets a 15-minute timer — all from one session.
+
+![adb-ai driving a TV and a phone at the same time: a YouTube search on the TV, Termux and a timer on the phone](docs/img/adb-ai-demo.gif)
+
 One dependency-free Python package, identical on Windows, Linux, macOS and
 Termux, with three ways in:
 
