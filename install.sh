@@ -89,6 +89,28 @@ else
     command -v adb >/dev/null 2>&1 || warn "adb still missing - adb-ai will not be able to do anything yet."
 fi
 
+# --- scrcpy (optional: only 'adb-ai mirror' and 'adb-ai record') -------------
+if command -v scrcpy >/dev/null 2>&1; then
+    ok "scrcpy found ($(scrcpy --version 2>&1 | head -1))"
+elif [ "$SYSTEM" = termux ]; then
+    # Not an oversight: scrcpy is not in Termux's default repo, and the X11
+    # route does not get it working either. Do not offer what cannot be had.
+    warn "scrcpy: not usable from Termux - 'adb-ai mirror' will not work here."
+    say  "       Everything else does. Use 'adb-ai shot' to see a screen,"
+    say  "       or mirror from a desktop on the same network."
+else
+    warn "scrcpy not found - optional, only 'adb-ai mirror' and 'adb-ai record' use it."
+    case "$SYSTEM" in
+        macos) ask "brew install scrcpy" ;;
+        linux)
+            if   command -v apt    >/dev/null 2>&1; then ask "sudo apt install -y scrcpy"
+            elif command -v dnf    >/dev/null 2>&1; then ask "sudo dnf install -y scrcpy"
+            elif command -v pacman >/dev/null 2>&1; then ask "sudo pacman -S --noconfirm scrcpy"
+            else say "Install scrcpy with your package manager if you want mirroring."
+            fi ;;
+    esac
+fi
+
 # --- adb-ai ------------------------------------------------------------------
 if [ "$CHECK_ONLY" = "1" ]; then
     say ""

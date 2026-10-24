@@ -46,12 +46,20 @@ the step that fails there. Everything is standard library, which is also why
 `requirements.txt` has no packages in it — the one real requirement is `adb`,
 which is not a Python package at all.
 
-**Filtering happens on your machine.** The obvious way to read device state is
-`adb shell "dumpsys window | grep mCurrentFocus"`. It is also fragile: plenty of
-Android builds ship a crippled `grep` or none at all, and some environments (a
-broken Termux `grep`, for one) fail in confusing ways. adb-ai pulls the whole
-`dumpsys` output and parses it in Python. Slightly more bytes over the wire,
-and it works everywhere.
+**Nothing depends on the device's `grep`.** The obvious way to read device
+state is `adb shell "dumpsys window | grep mCurrentFocus"`. It is also fragile:
+plenty of Android builds ship a crippled `grep` or none at all, and some
+environments (a broken Termux `grep`, for one) fail in confusing ways. So every
+command parses what it needs in Python, from the whole dump.
+
+`state` is the exception, and only as a fast path. It is the command an agent
+runs most, and its three answers are three lines buried in dumps that can run
+to hundreds of kilobytes — all of it crossing your wifi. So it asks once, with
+the filtering piped on the device, and checks the result: `mWakefulness` is
+always present on a real device, so an empty section means the pipeline never
+ran. When that happens adb-ai falls back to the three full dumps, parses them
+here as usual, and remembers that this device needs the slow path. Correct
+everywhere, one roundtrip and a few hundred bytes where it can be.
 
 **Screenshots are repaired.** Several Android TV firmwares print driver noise on
 stdout before the PNG:
@@ -90,9 +98,12 @@ session (`state=3` means playing). It is faster, cheaper and unambiguous.
   computer" dialog. Treat an enabled device as open to everyone on that network.
 - **One device per command.** There is no fan-out to several devices at once;
   loop in your shell if you need it.
-- **No audio or video streaming.** This is a remote control, not
-  [scrcpy](https://github.com/Genymobile/scrcpy) — if you want the screen
-  mirrored and clickable, use scrcpy and come back here for automation.
+- **No video pipeline of its own.** The screen is a PNG at a time
+  (`adb-ai shot`); anything live is
+  [scrcpy](https://github.com/Genymobile/scrcpy)'s job, and `adb-ai mirror`
+  just launches it with sensible flags. That keeps the core dependency-free:
+  no scrcpy, no mirroring, everything else unaffected — and scrcpy does not
+  work on Termux at all.
 - **Not every device exposes everything.** Some TVs ignore `KEYCODE_POWER`,
   some report no media session at all. `adb-ai doctor` and `adb-ai state` tell
   you what you are dealing with.

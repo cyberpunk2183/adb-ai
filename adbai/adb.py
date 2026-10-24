@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import platform
 import shutil
 import socket
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +21,17 @@ PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 class AdbError(RuntimeError):
     """Anything that went wrong while talking to adb or a device."""
+
+
+def current_system() -> str:
+    """The label we use when telling someone how to install something.
+
+    ``platform.system()`` says "Linux" on Android, where the install command is
+    nothing like a desktop Linux one, so Termux gets its own name.
+    """
+    if "com.termux" in sys.prefix or os.environ.get("TERMUX_VERSION"):
+        return "Termux"
+    return platform.system()
 
 
 def _candidate_paths() -> Iterable[Path]:
@@ -126,8 +139,27 @@ class Device:
         return f"{self.serial}  [{self.state}]  {label}"
 
 
-def devices() -> list[Device]:
-    """Every device adb currently knows about."""
+# An agent doing ten things in a row used to pay for ten `adb devices -l`
+# calls, about 50ms each before any network is involved, to re-learn something
+# that changes when someone plugs or unplugs a cable. A few seconds of memory
+# removes that from every single tool call.
+DEVICES_TTL = 3.0
+_devices_cache: tuple[float, list[Device]] | None = None
+
+
+def forget_devices() -> None:
+    """Drop the cached device list - after a connect, or when you need truth."""
+    global _devices_cache
+    _devices_cache = None
+
+
+def devices(*, fresh: bool = False) -> list[Device]:
+    """Every device adb currently knows about, cached for ``DEVICES_TTL``."""
+    global _devices_cache
+    now = time.monotonic()
+    if not fresh and _devices_cache is not None and now - _devices_cache[0] < DEVICES_TTL:
+        return _devices_cache[1]
+
     out = run(["devices", "-l"], check=False).stdout
     found: list[Device] = []
     for line in out.splitlines()[1:]:
@@ -141,6 +173,7 @@ def devices() -> list[Device]:
             if token.startswith("model:"):
                 model = token.split(":", 1)[1].replace("_", " ")
         found.append(Device(serial, state, model))
+    _devices_cache = (now, found)
     return found
 
 
@@ -158,6 +191,7 @@ def normalise_target(target: str, port: int = DEFAULT_PORT) -> str:
 def connect(target: str, port: int = DEFAULT_PORT, timeout: float = 15.0) -> str:
     """Connect to a device over TCP. Returns adb's message."""
     address = normalise_target(target, port)
+    forget_devices()
     out = run(["connect", address], timeout=timeout, check=False).stdout.strip()
     lowered = out.lower()
     if "connected to" not in lowered or "cannot" in lowered or "failed" in lowered:
@@ -171,6 +205,7 @@ def connect(target: str, port: int = DEFAULT_PORT, timeout: float = 15.0) -> str
 
 def disconnect(target: str | None = None) -> str:
     args = ["disconnect"] + ([normalise_target(target)] if target else [])
+    forget_devices()
     return run(args, check=False).stdout.strip()
 
 

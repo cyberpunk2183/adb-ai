@@ -63,6 +63,51 @@ export ADBAI_ADB=/opt/platform-tools/adb     # macOS, Linux, Termux
 setx ADBAI_ADB "C:\platform-tools\adb.exe"   # Windows
 ```
 
+### Optional: scrcpy
+
+Only `adb-ai mirror` and `adb-ai record` use it — watching the device's screen
+live in a window. Skip it if you do not want that; nothing else depends on it.
+
+| System | Command |
+|---|---|
+| Windows | `winget install Genymobile.scrcpy` (or `scoop install scrcpy`) |
+| macOS | `brew install scrcpy` |
+| Debian/Ubuntu | `sudo apt install scrcpy` |
+| Fedora | `sudo dnf install scrcpy` |
+| Arch | `sudo pacman -S scrcpy` |
+| Termux | **not supported** |
+
+**scrcpy does not work from Termux.** It is not in the default repo, and the
+x11-repo plus Termux:X11 route does not get it running either. adb-ai says so
+rather than letting scrcpy fail with an SDL error, and nothing else is
+affected: use `adb-ai shot` to see a screen from a phone, and run adb-ai from a
+desktop on the same network when you want to mirror.
+
+A mirror also needs a desktop session — over SSH there is no window to open,
+though `adb-ai record` still works. As with adb, `ADBAI_SCRCPY` points at the
+binary if it lives somewhere unusual.
+
+### Optional: ffmpeg
+
+Worth having if you use adb-ai through an agent. A screenshot of a 4K screen
+with artwork on it is several megabytes of PNG, and all of it has to reach the
+model before it can answer; with ffmpeg installed, adb-ai scales the big ones
+down first. Small screenshots — a settings page, a TV's home row — are left
+alone, because PNG already makes those tiny.
+
+| System | Command |
+|---|---|
+| Windows | `winget install Gyan.FFmpeg` |
+| macOS | `brew install ffmpeg` |
+| Debian/Ubuntu | `sudo apt install ffmpeg` |
+| Fedora | `sudo dnf install ffmpeg` |
+| Arch | `sudo pacman -S ffmpeg` |
+| Termux | `pkg install ffmpeg` |
+
+This one does work on Termux. `ADBAI_FFMPEG` points at the binary if it is
+somewhere unusual, and `ADBAI_SHOT_MAX` sets the default size (`0` turns the
+scaling off).
+
 ---
 
 ## 2. Install adb-ai

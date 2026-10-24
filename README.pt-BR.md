@@ -50,6 +50,25 @@ Duas coisas — e o `adb-ai doctor` confere as duas pra você a qualquer momento
 | Arch | `sudo pacman -S android-tools` |
 | Termux (Android) | `pkg install android-tools python` |
 
+**Opcional: `scrcpy`** — só pra `adb-ai mirror` e `adb-ai record`, que mostram
+a tela do aparelho ao vivo numa janela. Nada mais depende dele.
+
+| Sistema | Como instalar o scrcpy |
+|---|---|
+| Windows | `winget install Genymobile.scrcpy` |
+| macOS | `brew install scrcpy` |
+| Debian/Ubuntu | `sudo apt install scrcpy` |
+| Fedora | `sudo dnf install scrcpy` |
+| Arch | `sudo pacman -S scrcpy` |
+| Termux (Android) | **não funciona** — veja abaixo |
+
+**No Termux o scrcpy não roda.** Não está no repositório padrão, e o caminho do
+X11 (x11-repo + app Termux:X11) também não resolve — espelhar um celular no
+próprio celular não é pra isso que a ferramenta serve. O `adb-ai` avisa isso em
+português claro em vez de te entregar um erro de SDL, e todo o resto funciona
+normal: no celular, quem mostra a tela é o `adb-ai shot`. Pra espelhar, rode o
+`adb-ai` de um desktop na mesma rede.
+
 ## Instalação
 
 ```bash
@@ -99,6 +118,8 @@ adb-ai timer 10m                          # timer
 adb-ai volume up -n 3
 adb-ai state                              # o que está na tela e se está tocando
 adb-ai shot tela.png                      # screenshot
+adb-ai mirror                             # vê a tela ao vivo (precisa de scrcpy)
+adb-ai record sessao.mp4                  # grava a tela, sem janela
 adb-ai off                                # apaga a tela
 ```
 
@@ -137,9 +158,10 @@ args = ["mcp"]
 { "mcpServers": { "adb-ai": { "command": "adb-ai", "args": ["mcp"] } } }
 ```
 
-Qualquer outro cliente MCP segue o mesmo formato. Chegam 15 ferramentas: achar
-na rede, conectar, teclas, apps, URLs, busca no YouTube, alarme, timer, volume,
-liga/desliga, estado e print (que volta como imagem pro modelo olhar).
+Qualquer outro cliente MCP segue o mesmo formato. Chegam 22 ferramentas: achar
+na rede, conectar, teclas, toques, apps, URLs, busca no YouTube, alarme, timer,
+volume, liga/desliga, estado, print (que volta como imagem pro modelo olhar),
+espelho da tela pra você acompanhar ao vivo, e shell.
 
 **Skill do Claude Code:**
 
@@ -150,9 +172,12 @@ mkdir -p ~/.claude/skills && cp -r skills/adb-ai ~/.claude/skills/
 Aí é só falar: *"põe o YouTube na TV"*, *"pausa isso aí"*, *"o que tá na tela da
 sala?"*.
 
-O `adb_shell` (shell cru) **vem desligado** no MCP — só liga com
-`ADBAI_ALLOW_SHELL=1`. Um agente que aperta Play é uma coisa; um agente que
-roda qualquer comando num aparelho da sua rede é outra bem diferente.
+O `adb_shell` roda **qualquer** comando no aparelho — `dumpsys`, `pm`, `am`,
+`settings`, `content` — como usuário shell, sem root. Isso é de propósito: é o
+que permite ao agente fazer o que as outras ferramentas não cobrem. Também
+é a única que pode mexer no aparelho de um jeito que você não pediu; se for
+demais pro seu caso, desligue com `"env": {"ADBAI_NO_SHELL": "1"}` na
+configuração do MCP.
 
 ## Por que não usar o `adb` direto?
 
@@ -160,8 +185,10 @@ roda qualquer comando num aparelho da sua rede é outra bem diferente.
   puros, sem nmap, igual no Windows e no Termux.
 - **Tem aparelho que corrompe a própria screenshot** — várias TVs Android
   imprimem lixo do driver antes do PNG; o `shot` sempre corta até o cabeçalho.
-- **Nem todo aparelho tem `grep` que funcione** — todo filtro acontece no seu
-  computador, em Python, nunca com pipe do lado do aparelho.
+- **Nem todo aparelho tem `grep` que funcione** — a leitura é feita em Python
+  no seu computador. Só o `state`, que é o comando que um agente mais usa, tenta
+  primeiro o `grep` do aparelho e cai sozinho pro jeito lento quando não dá —
+  nada *depende* de pipe no aparelho.
 - **Nomes de tecla e de pacote são impossíveis de decorar** — `adb-ai key ok` em
   vez de `adb shell input keyevent KEYCODE_DPAD_CENTER`.
 - **"Funcionou?"** — `adb-ai state` responde numa chamada só.

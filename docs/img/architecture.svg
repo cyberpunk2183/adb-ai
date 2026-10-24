@@ -27,7 +27,7 @@
   <rect class="box" x="315" y="50" width="250" height="78" rx="8"/>
   <text class="t" x="335" y="78">Any MCP client</text>
   <text class="s" x="335" y="100">Claude Desktop, Cursor…</text>
-  <text class="s" x="335" y="117">15 tools over stdio</text>
+  <text class="s" x="335" y="117">22 tools over stdio</text>
 
   <rect class="box" x="590" y="50" width="250" height="78" rx="8"/>
   <text class="t" x="610" y="78">Claude Code skill</text>
@@ -42,7 +42,7 @@
   <text class="t" x="60" y="218">adb-ai core · pure Python standard library</text>
   <text class="s" x="60" y="244">discovery (scan)   ·   aliases &amp; default device   ·   friendly key names</text>
   <text class="s" x="60" y="264">app aliases → package names   ·   state: foreground + screen + playback</text>
-  <text class="s" x="60" y="284">output parsed here, never with grep on the device   ·   screenshot repair</text>
+  <text class="s" x="60" y="284">output parsed here, never dependent on the device's grep   ·   screenshot repair</text>
 
   <path class="arr" d="M440 308 V 356"/>
   <text class="lbl" x="452" y="336">one subprocess call per action</text>

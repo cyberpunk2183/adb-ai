@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 import platform
 import shutil
 import subprocess
 import sys
 
-from . import __version__, adb, config
+from . import __version__, adb, config, images, mirror
 
 MIN_PYTHON = (3, 9)
 
@@ -30,9 +29,7 @@ PYTHON_INSTALL = {
 
 
 def _system() -> str:
-    if "com.termux" in sys.prefix or os.environ.get("TERMUX_VERSION"):
-        return "Termux"
-    return platform.system()
+    return adb.current_system()
 
 
 def _line(ok: bool | None, title: str, detail: str = "") -> str:
@@ -94,6 +91,34 @@ def run() -> int:
     aliases = ", ".join(f"{k}={v}" for k, v in stored["aliases"].items()) or "none"
     report.append(_line(True, f"config: {config.config_path()}",
                         f"default device: {default}  |  aliases: {aliases}"))
+
+    # scrcpy (optional: only 'mirror' and 'record' use it) -----------------
+    if system == "Termux":
+        report.append(_line(None, "scrcpy: not usable from Termux",
+                            "no mirroring from a phone - 'adb-ai shot' gets you "
+                            "the screen as a PNG, and everything else works"))
+    else:
+        try:
+            detail = mirror.scrcpy_path()
+            if mirror.headless():
+                detail += ("\n       no DISPLAY here, so 'mirror' cannot open a "
+                           "window - 'record' still works")
+            report.append(_line(True, f"scrcpy found - {mirror.version()}", detail))
+        except adb.AdbError:
+            report.append(_line(None, "scrcpy not found - optional",
+                                "only 'adb-ai mirror' and 'adb-ai record' need it:\n"
+                                "       " + mirror.SCRCPY_INSTALL.get(
+                                    system, "see github.com/Genymobile/scrcpy")))
+
+    # ffmpeg (optional: smaller screenshots for an agent) ------------------
+    if images.available():
+        report.append(_line(True, "ffmpeg found - screenshots get scaled down "
+                                  "before an agent sees them"))
+    else:
+        report.append(_line(None, "ffmpeg not found - optional",
+                            "screenshots are sent full size, which is slower:\n"
+                            "       " + images.FFMPEG_INSTALL.get(
+                                system, "install ffmpeg")))
 
     if shutil.which("adb") is None and not failed:
         report.append(_line(None, "adb is not on your PATH",

@@ -54,6 +54,13 @@ adb-ai shot out.png   # screenshot (reads correctly even on devices that
                       # print driver noise before the PNG)
 ```
 
+`adb-ai shot` is your eyes. `adb-ai mirror` is **not**: it opens a live window
+on the user's own computer for *them* to watch, and you cannot see it. Offer it
+when the user wants to follow along or take over - "want me to put the screen
+up in a window while I do this?" - and keep using `shot` yourself. It needs
+scrcpy, and it does not work on Termux; if it refuses, say so and carry on with
+`shot`.
+
 Prefer `adb-ai state` over a screenshot when a text answer is enough - it is
 much faster and cheaper.
 
@@ -73,9 +80,22 @@ Two details worth knowing:
 - **Ask before anything disruptive** when the user has not asked for it
   directly: force-stopping an app, putting a device to sleep, or changing the
   volume by a lot.
-- **Never use `adb-ai shell` for something a normal command already does.** Raw
-  shell is for things the CLI does not cover, and it is disabled by default on
-  the MCP server for a reason.
+- **Never start a recording quietly.** `adb-ai record` and `adb_mirror` with
+  `record` write a video of everything that crosses that screen to the user's
+  disk. Say where the file goes and get a yes first.
+- **Use `adb-ai shell` for what the named commands do not cover**, not as a
+  shortcut around them. `adb-ai open netflix` is clearer and safer than the
+  equivalent `monkey` line, and it checks the package exists first.
+- **Shell is on by default and can change the device.** Reading is fine without
+  asking - `dumpsys`, `getprop`, `pm list`, `settings get`, `wm size`. Anything
+  that changes or removes something - `pm uninstall`, `pm clear`, `settings
+  put`, `rm`, `am force-stop` on an app in use - say what you are about to run
+  and get a yes first. There is no undo on someone's TV.
+- If the shell answers that it is switched off, the owner set `ADBAI_NO_SHELL`.
+  Do not suggest removing it; work with the other tools.
+- **Send a key sequence as one command**: `adb-ai key down down ok`, not three
+  calls. It is one roundtrip instead of three. If the menu ends up one step
+  short, the animation ate a key - repeat it with `--pace 120`.
 - Respect what the device is for. Opening a streaming app is fine; working
   around a paywall, a licence check or someone's account is not.
 

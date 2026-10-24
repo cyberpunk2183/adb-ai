@@ -144,10 +144,78 @@ The MCP server runs as a separate process with its own environment — often a
 minimal PATH, especially for GUI apps on macOS. Give it absolute paths; see
 [the MCP setup](AGENTS.md#claude-desktop-cursor-and-other-clients).
 
-### `adb_shell` refuses to run
+### A key sequence lands one step short
 
-By design. Set `ADBAI_ALLOW_SHELL=1` in the server's environment if you really
-want an agent to have raw shell on a device in your home.
+`adb-ai key down down ok` sends all three keycodes in one call, which is fast
+but gives the UI no time between them, and some menus drop what arrives during
+an animation. Slow it down:
+
+```bash
+adb-ai key down down ok --pace 120
+```
+
+From an agent, the same thing is `pace_ms: 120` on `adb_key`.
+
+### Screenshots take forever through an agent
+
+A 4K screen with artwork on it is several megabytes of PNG, and all of it has
+to reach the model. Install `ffmpeg` and adb-ai scales the big ones down first
+(`pkg install ffmpeg`, `sudo apt install ffmpeg`, `brew install ffmpeg`,
+`winget install Gyan.FFmpeg`). `adb-ai doctor` says whether it found it.
+
+To change the size: `max_size` on `adb_screenshot`, `ADBAI_SHOT_MAX` for the
+whole server, `--max-size` on `adb-ai shot`. `0` means "send the original".
+Screens that are already small are never re-encoded — PNG handles flat colours
+better than a re-encode would.
+
+### `adb-ai mirror` says scrcpy was not found
+
+It is optional and separate from adb — nothing else in adb-ai needs it:
+
+| System | Command |
+|---|---|
+| Debian/Ubuntu | `sudo apt install scrcpy` |
+| Fedora | `sudo dnf install scrcpy` |
+| Arch | `sudo pacman -S scrcpy` |
+| macOS | `brew install scrcpy` |
+| Windows | `winget install Genymobile.scrcpy` |
+
+If it is installed somewhere unusual, point `ADBAI_SCRCPY` at the binary.
+`adb-ai doctor` confirms what it found.
+
+### `scrcpy does not work from Termux`
+
+It does not, and this is not adb-ai being careful: scrcpy is not in Termux's
+default repo, and the x11-repo plus Termux:X11 route does not get it running
+either. Everything else in adb-ai works on Termux.
+
+- To see a screen from a phone: `adb-ai shot` (an agent gets the same picture
+  from `adb_screenshot`).
+- To mirror: run adb-ai from a desktop on the same network.
+- If you did somehow get scrcpy running on Android, point `ADBAI_SCRCPY` at it
+  and adb-ai will use it.
+
+### `no display to open a window on`
+
+`DISPLAY` and `WAYLAND_DISPLAY` are both unset — usually an SSH session or a
+server with no desktop. A mirror needs a screen to draw on; a recording does
+not:
+
+```bash
+adb-ai record session.mp4
+```
+
+### The mirror opens but the mouse does nothing
+
+You are on a TV or a TV box. There is no touchscreen behind that screen, so
+taps go nowhere. Use the arrow keys in the scrcpy window, or `adb-ai key`.
+`--view-only` makes the window honest about it.
+
+### `adb_shell` says it is switched off
+
+Someone set `ADBAI_NO_SHELL=1` (or `ADBAI_ALLOW_SHELL=0`) in that server's
+environment — it is on by default. Remove the variable from your MCP config and
+restart the client.
 
 ---
 

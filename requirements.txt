@@ -19,3 +19,32 @@
 #
 # Then check it with:  adb version
 # If adb lives somewhere unusual, point ADBAI_ADB at the binary.
+#
+# OPTIONAL, and also not a Python package: `scrcpy`, used only by
+# `adb-ai mirror` and `adb-ai record` to show the device's screen in a window.
+# Everything else works without it.
+#
+#     Debian:   sudo apt install scrcpy
+#     Fedora:   sudo dnf install scrcpy
+#     Arch:     sudo pacman -S scrcpy
+#     macOS:    brew install scrcpy
+#     Windows:  winget install Genymobile.scrcpy
+#     Termux:   not supported - scrcpy does not work from Termux. Use
+#               `adb-ai shot` to see the screen, or mirror from a desktop.
+#
+# If scrcpy lives somewhere unusual, point ADBAI_SCRCPY at the binary.
+#
+# OPTIONAL, also not a Python package: `ffmpeg`. When it is installed, a big
+# screenshot is scaled down before it is handed to an agent - a 4K screen with
+# artwork on it goes from megabytes to a tenth of that, which is time the agent
+# spends answering instead of uploading. Without it, screenshots are sent
+# full-size, exactly as before.
+#
+#     Termux:   pkg install ffmpeg
+#     Debian:   sudo apt install ffmpeg
+#     Fedora:   sudo dnf install ffmpeg
+#     Arch:     sudo pacman -S ffmpeg
+#     macOS:    brew install ffmpeg
+#     Windows:  winget install Gyan.FFmpeg
+#
+# If ffmpeg lives somewhere unusual, point ADBAI_FFMPEG at the binary.

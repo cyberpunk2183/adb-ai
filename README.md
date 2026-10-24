@@ -57,6 +57,30 @@ But **adb is not a Python package**, so `pip` cannot install it:
 | macOS | `brew install android-platform-tools` |
 | Windows | `winget install Google.PlatformTools` |
 
+**Optional: `scrcpy`**, and only for `adb-ai mirror` and `adb-ai record` —
+watching the screen live in a window. Nothing else needs it.
+
+| System | Command |
+|---|---|
+| Debian/Ubuntu | `sudo apt install scrcpy` |
+| Fedora | `sudo dnf install scrcpy` |
+| Arch | `sudo pacman -S scrcpy` |
+| macOS | `brew install scrcpy` |
+| Windows | `winget install Genymobile.scrcpy` |
+| Termux | **not supported** — see below |
+
+**Optional: `ffmpeg`**, for agents. With it, a screenshot that would be
+megabytes is scaled down before the model sees it — the picture arrives sooner
+and says the same thing. `pkg install ffmpeg`, `sudo apt install ffmpeg`,
+`brew install ffmpeg`, `winget install Gyan.FFmpeg`. Unlike scrcpy, it works on
+Termux too. Without it nothing breaks: screenshots go full size, as before.
+
+**scrcpy does not work from Termux.** It is not in the default repo, and the
+X11 route does not get it running either; mirroring a phone onto the same phone
+is not what it is for. `adb-ai` says so plainly instead of handing you an SDL
+error, and everything else works there — on a phone, `adb-ai shot` is how you
+see a screen. To mirror, run `adb-ai` from a desktop on the same network.
+
 `adb-ai doctor` checks the lot at any time, and tells you how to fix whatever
 is missing on your system:
 
@@ -70,6 +94,10 @@ adb-ai 0.1.0 on Linux (Linux-6.8.0-x86_64-with-glibc2.39)
 [ok  ] Android Debug Bridge version 1.0.41
 [warn] no devices connected
        'adb-ai scan' looks for them on your network
+[ok  ] config: /home/you/.config/adb-ai/config.json
+       default device: none set  |  aliases: none
+[ok  ] scrcpy found - scrcpy 3.1
+       /usr/bin/scrcpy
 
 ready to go.
 ```
@@ -130,9 +158,10 @@ args = ["mcp"]
 ```
 
 Any other MCP client takes the same shape: run `adb-ai mcp`, talk JSON-RPC over
-stdio. Fifteen tools arrive — scan, connect, keys, apps, URLs, YouTube search,
-alarms, timers, volume, power, state and screenshots (returned as an image the
-model can look at).
+stdio. Twenty-two tools arrive — scan, connect, keys, taps and swipes, apps,
+URLs, YouTube search, alarms, timers, volume, power, state, screenshots
+(returned as an image the model can look at), a live mirror of the screen for
+you to watch, and a full shell.
 
 Then just ask, in whatever words you use at home:
 
@@ -175,6 +204,7 @@ adb-ai use <alias|serial>           set the default device
 adb-ai alias [name] [target]        name a device, or list the names
 
 adb-ai key home | ok | play | ...   press keys, in order; -n repeats
+                 --pace 120         one call per key, for menus that drop them
 adb-ai keys                         list every key name
 adb-ai text "hello there"           type into the focused field
 
@@ -186,6 +216,9 @@ adb-ai youtube <query>              search YouTube, no on-screen keyboard
 
 adb-ai state [--json]               foreground app, screen, playback
 adb-ai shot [out.png]               screenshot ('-' writes to stdout)
+                 --max-size 1024    scale it down (needs ffmpeg)
+adb-ai mirror [--view-only]         watch the screen live (needs scrcpy)
+adb-ai record [out.mp4]             record the screen, no window
 adb-ai volume up|down|mute|set N    volume
 adb-ai off | on                     sleep or wake the screen
 
@@ -214,13 +247,23 @@ Every command takes `-d <alias|serial>`; without it, the default device is used.
 
 In Claude Code: `claude mcp add adb-ai -- adb-ai mcp`.
 
-Fifteen tools, including `adb_scan`, `adb_connect`, `adb_key`, `adb_open_app`,
+Twenty-two tools, including `adb_scan`, `adb_connect`, `adb_key`, `adb_tap`,
+`adb_open_app`, `adb_mirror`,
 `adb_youtube_search`, `adb_state`, `adb_screenshot` and `adb_volume`. The
 screenshot comes back as an image the model can actually look at.
 
-`adb_shell` is **disabled by default** — an agent that can run any command on a
-device in your home is a different level of trust from one that can press Play.
-Set `ADBAI_ALLOW_SHELL=1` in the server's environment if you want it.
+`adb_shell` runs **any** shell command on the device — `dumpsys`, `pm`, `am`,
+`settings`, `content`, the lot — as the shell user, with no root. That is
+deliberate: it is what makes an agent able to do the things the other tools
+do not cover. It is also the one tool that can change a device in ways you did
+not ask for, so if that is too much for your setup, switch it off:
+
+```json
+{ "mcpServers": { "adb-ai": {
+    "command": "adb-ai", "args": ["mcp"],
+    "env": { "ADBAI_NO_SHELL": "1" }
+} } }
+```
 
 ### Claude Code skill
 
@@ -240,8 +283,10 @@ Because the details bite:
 - **Some devices corrupt their own screenshots.** Several Android TV builds
   print driver noise on stdout before the PNG; a naively saved file is broken.
   `adb-ai shot` always cuts to the PNG magic bytes.
-- **Not every device has a working `grep`.** All output filtering happens on
-  your machine in Python, never with a pipe on the device.
+- **Not every device has a working `grep`.** Output is parsed on your machine
+  in Python. `state` tries the device's own `grep` first, because it is the one
+  command an agent runs constantly, and silently falls back to parsing the full
+  dump when the device cannot do it — nothing *depends* on a device-side pipe.
 - **Key codes and package names are not memorable.** `adb-ai key ok` beats
   `adb shell input keyevent KEYCODE_DPAD_CENTER`, and `adb-ai open netflix`
   finds `com.netflix.ninja` or `com.netflix.mediaclient`, whichever is there.

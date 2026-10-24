@@ -65,6 +65,19 @@ if (Get-Command adb -ErrorAction SilentlyContinue) {
     }
 }
 
+# --- scrcpy (optional: only 'adb-ai mirror' and 'adb-ai record') -------------
+if (Get-Command scrcpy -ErrorAction SilentlyContinue) {
+    Ok ((scrcpy --version 2>&1 | Select-Object -First 1))
+} else {
+    Warn "scrcpy not found - optional, only 'adb-ai mirror' and 'adb-ai record' use it."
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Invoke-Step "winget install -e --id Genymobile.scrcpy" | Out-Null
+    } else {
+        Say "Get it from https://github.com/Genymobile/scrcpy/releases if you"
+        Say "want to watch the device's screen in a window."
+    }
+}
+
 # --- adb-ai ------------------------------------------------------------------
 if ($Check) { Say ""; Say "-Check: nothing was installed."; exit 0 }
 

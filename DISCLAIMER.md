@@ -72,13 +72,21 @@ permissions": the same reach you have when the device is unlocked in your hand.
   plus the ability to type it is an account takeover in two steps.
 - **Read what the system will tell the shell user** — installed apps, running
   activities, the files on shared storage (your photos, your downloads).
-- **Run arbitrary commands**, if you turned on `ADBAI_ALLOW_SHELL`. Don't,
-  unless you mean it.
+- **Run arbitrary commands.** `adb_shell` is on by default, so the agent can
+  uninstall an app, clear its data or change a setting — not only drive the
+  screen. `ADBAI_NO_SHELL=1` takes that away.
 
 **Where it goes.** A screenshot handed to an agent leaves your device: it is
 sent to whatever model provider that agent uses and may be retained under their
 terms. Treat "take a screenshot of my phone" as publishing that screen to a
 third party, and take it on a screen you are willing to publish.
+
+Mirroring is the opposite case, and worth keeping straight: `adb-ai mirror`
+sends the screen to your own computer and to nothing else — no model sees it.
+`adb-ai record`, and `adb_mirror` with `record`, write a **video of that screen
+to a file on your disk**: everything that passed in front of the camera,
+notifications and codes included. Know where that file is going before you
+start one, and an agent should say so before it records.
 
 **The device does not have to be awake or watched.** The agent acts whether or
 not you are looking at it, and ADB does not log to your face — there is no
@@ -93,8 +101,12 @@ notification saying something just opened your messages.
   resets at reboot; that is a feature, not an inconvenience.
 - **Revoke trust afterwards:** Developer options → *Revoke USB debugging
   authorisations*. It costs you one pairing next time.
-- **Leave `ADBAI_ALLOW_SHELL` unset.** The ordinary tools cover alarms, apps,
-  keys and volume without a shell.
+- **Consider `ADBAI_NO_SHELL=1` on a phone.** Alarms, apps, keys, typing and
+  volume all work without a shell; turning it off on your daily driver costs
+  you little and removes the "change the device" half of the risk.
+- **Watch it, if you can.** `adb-ai mirror` puts the screen in a window on
+  your computer while the agent works, and the mouse is yours the moment you
+  want it. The agent cannot see that window — it is for you.
 - **Keep the phone locked when idle.** Most of the reach above needs an
   unlocked screen.
 - **Say what is off limits** in your agent's instructions — and remember that
@@ -117,9 +129,9 @@ this tool can. So:
   debugging enabled on a public or untrusted network.
 - Keep it on a network you control; a guest or IoT VLAN is better still.
 - **Turn network debugging off when you are done** experimenting.
-- Treat an agent's access accordingly. `adb_shell` is disabled by default in
-  the MCP server for this reason — it is arbitrary command execution on a
-  device in your home.
+- Treat an agent's access accordingly. `adb_shell` is arbitrary command
+  execution on a device in your home, and it is **on by default** — set
+  `ADBAI_NO_SHELL=1` where that is not what you want.
 
 If you find a security problem in this project, see [SECURITY.md](SECURITY.md).
 

@@ -16,14 +16,34 @@ def _quote(value: str) -> str:
     return "'" + value.replace("'", "'\\''") + "'"
 
 
-def press(key: str, serial: str | None = None, repeat: int = 1) -> str:
+def press(key: str, serial: str | None = None, repeat: int = 1,
+          pace_ms: int = 0) -> str:
     """Send a key event, by friendly name or raw ``KEYCODE_*``."""
-    code = keys.resolve(key)
-    for index in range(max(1, repeat)):
-        if index:
-            time.sleep(0.12)
-        adb.shell(f"input keyevent {code}", serial=serial)
-    return code
+    press_sequence([key], serial=serial, repeat=repeat, pace_ms=pace_ms)
+    return keys.resolve(key)
+
+
+def press_sequence(names: list[str], serial: str | None = None, repeat: int = 1,
+                   pace_ms: int = 0) -> list[str]:
+    """Press several keys in order, in a single adb call where we can.
+
+    ``input keyevent`` takes as many keycodes as you give it, so "down down ok"
+    is one roundtrip rather than three - which is the difference between a
+    remote that feels instant and one that does not, over wifi.
+
+    Some menus drop keys that arrive back to back. ``pace_ms`` goes back to one
+    call per key with a pause between them, for those.
+    """
+    codes = [keys.resolve(name) for name in names]
+    sent = [code for code in codes for _ in range(max(1, repeat))]
+    if pace_ms > 0:
+        for index, code in enumerate(sent):
+            if index:
+                time.sleep(pace_ms / 1000)
+            adb.shell(f"input keyevent {code}", serial=serial)
+    else:
+        adb.shell("input keyevent " + " ".join(sent), serial=serial)
+    return codes
 
 
 def type_text(text: str, serial: str | None = None) -> None:
@@ -36,15 +56,33 @@ def type_text(text: str, serial: str | None = None) -> None:
     adb.shell(f"input text {_quote(payload)}", serial=serial)
 
 
-def screen_size(serial: str | None = None) -> tuple[int, int]:
-    """The display size in pixels, as (width, height)."""
+# A screen does not change size unless someone rotates the device, and a
+# scroll asks for it on every call.
+SIZE_TTL = 10.0
+_size_cache: dict[str | None, tuple[float, tuple[int, int]]] = {}
+
+
+def forget_sizes() -> None:
+    """Drop cached screen sizes - after a rotation, for instance."""
+    _size_cache.clear()
+
+
+def screen_size(serial: str | None = None, *, fresh: bool = False) -> tuple[int, int]:
+    """The display size in pixels, as (width, height), cached for ``SIZE_TTL``."""
+    now = time.monotonic()
+    cached = _size_cache.get(serial)
+    if not fresh and cached is not None and now - cached[0] < SIZE_TTL:
+        return cached[1]
+
     out = adb.shell("wm size", serial=serial)
     for line in out.splitlines():
         if "size:" in line:  # "Physical size: 720x1640" or an override line
             value = line.split(":", 1)[1].strip()
             if "x" in value:
                 width, height = value.split("x", 1)
-                return int(width), int(height)
+                size = (int(width), int(height))
+                _size_cache[serial] = (now, size)
+                return size
     raise adb.AdbError(f"could not read the screen size: {out.strip() or 'no output'}")
 
 
@@ -114,13 +152,8 @@ def search_youtube(query: str, serial: str | None = None) -> None:
     open_url(url, serial=serial, package=package)
 
 
-def current_app(serial: str | None = None) -> str | None:
-    """The package/activity in the foreground, or ``None`` during a transition.
-
-    The filtering happens here rather than with ``grep`` on the device, so it
-    works on stripped-down systems whose grep is missing or broken.
-    """
-    out = adb.shell("dumpsys window", serial=serial, timeout=45.0)
+def _parse_focus(out: str) -> str | None:
+    """Pull the focused package/activity out of a dump, or one line of one."""
     for line in out.splitlines():
         if "mCurrentFocus" not in line:
             continue
@@ -134,15 +167,22 @@ def current_app(serial: str | None = None) -> str | None:
     return None
 
 
+def current_app(serial: str | None = None) -> str | None:
+    """The package/activity in the foreground, or ``None`` during a transition.
+
+    The filtering happens here rather than with ``grep`` on the device, so it
+    works on stripped-down systems whose grep is missing or broken.
+    """
+    return _parse_focus(adb.shell("dumpsys window", serial=serial, timeout=45.0))
+
+
 _PLAYBACK_STATES = {
     0: "none", 1: "stopped", 2: "paused", 3: "playing", 4: "fast-forwarding",
     5: "rewinding", 6: "buffering", 7: "error", 8: "connecting",
 }
 
 
-def playback(serial: str | None = None) -> dict[str, object]:
-    """What the active media session is doing, if there is one."""
-    out = adb.shell("dumpsys media_session", serial=serial, timeout=45.0)
+def _parse_playback(out: str) -> dict[str, object]:
     match = re.search(r"state=PlaybackState\s*\{[^}]*?state=(\d+)", out)
     if not match:
         return {"state": None, "label": "no media session"}
@@ -150,16 +190,70 @@ def playback(serial: str | None = None) -> dict[str, object]:
     return {"state": code, "label": _PLAYBACK_STATES.get(code, "unknown")}
 
 
+def playback(serial: str | None = None) -> dict[str, object]:
+    """What the active media session is doing, if there is one."""
+    return _parse_playback(adb.shell("dumpsys media_session", serial=serial,
+                                     timeout=45.0))
+
+
+def _parse_wakefulness(out: str) -> str:
+    match = re.search(r"mWakefulness=(\w+)", out)
+    return match.group(1) if match else "unknown"
+
+
+# `state` used to ask three questions in three adb calls, and the answer to
+# each was one line buried in a dump that can run to hundreds of kilobytes -
+# all of it crossing the wifi. This asks once, and lets the device throw the
+# rest away, when it has a grep that works. Devices without one fall back to
+# the three full dumps, filtered here, and are remembered so they only pay for
+# the attempt once.
+_MARK = "@@ADBAI"
+_STATE_PROBE = (
+    f"echo {_MARK}P; dumpsys power | grep -m1 mWakefulness; "
+    f"echo {_MARK}W; dumpsys window | grep -m1 mCurrentFocus; "
+    f"echo {_MARK}M; dumpsys media_session | grep -m1 state=PlaybackState; "
+    f"echo {_MARK}END"
+)
+_probe_works: dict[str | None, bool] = {}
+
+
+def _split_probe(out: str) -> dict[str, str] | None:
+    """Cut the probe's output into its three sections, or ``None`` if it failed.
+
+    The power section is the proof: ``mWakefulness`` is always there on a real
+    device, so an empty one means the pipeline never ran (no grep, usually).
+    """
+    if f"{_MARK}END" not in out:
+        return None
+    sections = {}
+    for key, marker in (("power", "P"), ("window", "W"), ("media", "M")):
+        start = out.find(f"{_MARK}{marker}\n")
+        if start < 0:
+            return None
+        start += len(f"{_MARK}{marker}\n")
+        end = out.find(_MARK, start)
+        sections[key] = out[start:end if end > 0 else None].strip()
+    return sections if sections["power"] else None
+
+
 def state(serial: str | None = None) -> dict[str, object]:
     """One call that answers "what is this thing doing right now?"."""
-    screen = adb.shell("dumpsys power", serial=serial, timeout=45.0)
-    wakefulness = "unknown"
-    match = re.search(r"mWakefulness=(\w+)", screen)
-    if match:
-        wakefulness = match.group(1)
+    if _probe_works.get(serial, True):
+        out = adb.shell(_STATE_PROBE, serial=serial, timeout=45.0)
+        sections = _split_probe(out)
+        if sections is not None:
+            _probe_works[serial] = True
+            return {
+                "foreground": _parse_focus(sections["window"]),
+                "screen": _parse_wakefulness(sections["power"]),
+                "playback": _parse_playback(sections["media"]),
+            }
+        _probe_works[serial] = False
+
     return {
         "foreground": current_app(serial),
-        "screen": wakefulness,
+        "screen": _parse_wakefulness(
+            adb.shell("dumpsys power", serial=serial, timeout=45.0)),
         "playback": playback(serial),
     }
 

@@ -246,6 +246,95 @@ Good night, everything:
 for device in tv quarto cozinha; do adb-ai -d "$device" off; done
 ```
 
+## When it feels slow
+
+Two knobs, both earned the hard way:
+
+```bash
+adb-ai key down down ok             # one adb call for all three - the default
+adb-ai key down down ok --pace 120  # one call per key, 120ms apart
+```
+
+Keys go in a single call because that is the difference between a remote that
+feels instant and one that does not. A menu that animates between items can
+drop keys that arrive together — if a sequence lands one step short, `--pace`
+is the fix.
+
+```bash
+adb-ai shot big.jpg --max-size 1024   # scale it down (needs ffmpeg)
+```
+
+For your own eyes a full-size PNG is fine. For an agent it is not: a 4K screen
+with artwork on it is megabytes that have to reach the model before it can say
+anything, so the MCP server scales those down automatically when ffmpeg is
+installed. A settings screen stays untouched — flat colours are already tiny as
+PNG, and re-encoding one costs more time than it saves.
+
+## Watching the screen
+
+Screenshots answer "what is on screen now?". When you want to *watch* — follow
+an agent while it works, or just use the TV from your desk — `adb-ai mirror`
+opens a window with [scrcpy](https://github.com/Genymobile/scrcpy) and gives
+you the mouse and keyboard too:
+
+```bash
+adb-ai mirror                       # the default device, in a window
+adb-ai -d tv mirror --view-only     # look, do not touch
+adb-ai mirror --max-size 1024       # smaller stream, for a slow network
+adb-ai mirror --stay-awake --screen-off   # drive a phone with its screen dark
+adb-ai mirror -- --crop 1080:1080:0:0     # anything after -- goes to scrcpy
+```
+
+Recording needs no window at all, which makes it the one that works over SSH:
+
+```bash
+adb-ai record session.mp4           # Ctrl-C to stop
+adb-ai record demo.mp4 --seconds 30 --no-audio
+```
+
+Two things to know before you reach for it:
+
+- **scrcpy is optional and separate.** `adb-ai doctor` says whether it is
+  there, and how to install it if not. Nothing else in adb-ai needs it.
+- **It does not work from Termux.** Not in the default repo, and the X11 route
+  does not get there either. adb-ai tells you so instead of letting scrcpy fail
+  with an SDL error. On a phone, `adb-ai shot` is how you see a screen; to
+  mirror, run adb-ai from a desktop on the same network.
+
+On a TV, mirroring works but the mouse mostly does not — there is no
+touchscreen behind it. Use the arrow keys in the window, or keep using
+`adb-ai key`.
+
+## The shell, for everything else
+
+Twenty tools cover the remote control. `adb-ai shell` covers the rest of
+Android:
+
+```bash
+adb-ai shell "dumpsys battery"                     # charge, health, temperature
+adb-ai shell "getprop ro.product.model"            # what is this device?
+adb-ai shell "settings get system screen_off_timeout"
+adb-ai shell "dumpsys deviceidle | head -20"
+adb-ai shell "pm list packages -d"                 # disabled packages
+adb-ai shell "am start -a android.settings.WIFI_SETTINGS"
+adb-ai shell "wm size" ; adb-ai shell "wm density"
+adb-ai shell "cmd notification post -S bigtext tag 'Dinner is ready'"
+```
+
+It runs as the shell user — no root — so plenty is still off limits, and that
+is a feature.
+
+**On the MCP server, `adb_shell` is on by default.** Reading state is harmless;
+`pm uninstall`, `pm clear`, `settings put` and friends are not, and there is no
+undo on a television. If an agent should be able to work the remote but never
+change the device, start the server with `ADBAI_NO_SHELL=1`.
+
+Filtering note: use the shell for the command, but let ADB-AI parse the output
+where it can (`state`, `apps`, `size`). Piping to `grep` on the device fails on
+systems with no usable grep, so the built-in commands parse here — except
+`state`, which tries the pipe for speed and falls back by itself when the
+device cannot manage it.
+
 ## Things that will not work
 
 Worth knowing before you file a bug:
@@ -258,8 +347,10 @@ Worth knowing before you file a bug:
 - **Pairing an Android 11+ phone from an adb without mDNS** (Termux's build, for
   one). Not a limitation of ADB-AI; see
   [troubleshooting](TROUBLESHOOTING.md#adb-pair-fails-with-protocol-fault-couldnt-read-status-message).
-- **Streaming the screen.** Use [scrcpy](https://github.com/Genymobile/scrcpy)
-  for mirroring; come back here for automation.
+- **Mirroring from Termux.** `adb-ai mirror` wraps
+  [scrcpy](https://github.com/Genymobile/scrcpy), and scrcpy does not work on
+  Termux — see [Watching the screen](#watching-the-screen) above. Everything
+  else works there.
 - **Changing system settings broadly.** Deliberately out of scope: this is a
   remote control, not a device management suite.
 - **Bypassing a licence, a paywall or someone's account.** Not supported, not

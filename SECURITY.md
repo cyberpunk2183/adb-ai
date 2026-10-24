@@ -21,7 +21,7 @@ In scope:
 - command injection through device names, aliases, app names or text passed to
   the CLI or the MCP tools;
 - the MCP server doing more than its tool definitions say — in particular
-  anything that reaches a shell while `ADBAI_ALLOW_SHELL` is unset;
+  anything that reaches a shell while `ADBAI_NO_SHELL=1` is set;
 - the config file or screenshots being written somewhere unsafe, or leaking
   into logs;
 - the installers running something other than what they print.
@@ -34,11 +34,13 @@ Out of scope, because they are properties of ADB itself, not of this project:
   [DISCLAIMER.md](DISCLAIMER.md) rather than pretending to fix it.
 - Anything that needs the attacker to already be on your local network *and*
   for you to have enabled debugging *and* accepted their computer on screen.
-- `adb_shell` being dangerous when you deliberately enable it.
+- `adb_shell` being powerful. It runs shell commands by design, and it is on
+  by default; `ADBAI_NO_SHELL=1` turns it off.
 
 ## Hardening checklist
 
 - Keep debugging off when you are not using it.
 - Never expose 5555 beyond your LAN; no port forwarding, no public Wi-Fi.
-- Leave `ADBAI_ALLOW_SHELL` unset unless you have a specific reason.
+- Set `ADBAI_NO_SHELL=1` for any device where an agent should drive the
+  screen but never change the system.
 - Prefer a separate network segment for devices you leave debuggable.

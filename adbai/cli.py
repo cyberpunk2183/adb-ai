@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, actions, adb, apps, config, keys, target
+from . import __version__, actions, adb, apps, config, images, keys, mirror, target
 
 
 def _out(message: str) -> None:
@@ -103,8 +103,9 @@ def cmd_alias(args: argparse.Namespace) -> int:
 
 def cmd_key(args: argparse.Namespace) -> int:
     serial = target.resolve(args.device)
-    for name in args.keys:
-        code = actions.press(name, serial=serial, repeat=args.repeat)
+    codes = actions.press_sequence(args.keys, serial=serial, repeat=args.repeat,
+                                   pace_ms=args.pace)
+    for name, code in zip(args.keys, codes):
         _out(f"{name} -> {code}")
     return 0
 
@@ -223,6 +224,11 @@ def cmd_state(args: argparse.Namespace) -> int:
 def cmd_shot(args: argparse.Namespace) -> int:
     serial = target.resolve(args.device)
     data = adb.screencap(serial)
+    if args.max_size:
+        # A .jpg name asks for JPEG; anything else stays a PNG, just smaller.
+        as_jpeg = args.output.lower().endswith((".jpg", ".jpeg"))
+        data, _ = images.shrink(data, max_size=args.max_size, jpeg=as_jpeg,
+                                above=0)
     if args.output == "-":
         sys.stdout.buffer.write(data)
         return 0
@@ -248,6 +254,43 @@ def cmd_on(args: argparse.Namespace) -> int:
     actions.wake_device(target.resolve(args.device))
     _out("awake")
     return 0
+
+
+def cmd_mirror(args: argparse.Namespace) -> int:
+    mirror.preflight()
+    serial = target.resolve(args.device)
+    _out(f"mirroring {serial} - close the window to stop")
+    return mirror.mirror(
+        serial,
+        view_only=args.view_only,
+        record=args.record,
+        max_size=args.max_size,
+        fps=args.fps,
+        bitrate=args.bitrate,
+        fullscreen=args.fullscreen,
+        stay_awake=args.stay_awake,
+        screen_off=args.screen_off,
+        audio=not args.no_audio,
+        title=f"adb-ai {serial}",
+        extra=args.extra,
+    )
+
+
+def cmd_record(args: argparse.Namespace) -> int:
+    mirror.preflight(window=False)
+    serial = target.resolve(args.device)
+    _out(f"recording {serial} to {args.output} - Ctrl-C to stop")
+    return mirror.mirror(
+        serial,
+        window=False,
+        record=args.output,
+        max_size=args.max_size,
+        fps=args.fps,
+        bitrate=args.bitrate,
+        audio=not args.no_audio,
+        time_limit=args.seconds,
+        extra=args.extra,
+    )
 
 
 def cmd_shell(args: argparse.Namespace) -> int:
@@ -318,6 +361,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("key", cmd_key, "press one or more remote-control keys")
     p.add_argument("keys", nargs="+", help="e.g. home ok play volup")
     p.add_argument("-n", "--repeat", type=int, default=1)
+    p.add_argument("--pace", type=int, default=0, metavar="MS",
+                   help="send one key per call, MS apart, for menus that drop "
+                        "keys arriving together")
 
     p = add("keys", cmd_keys, "list the key names", device=False)
     p.add_argument("--json", action="store_true")
@@ -378,6 +424,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("shot", cmd_shot, "save a screenshot ('-' for stdout)")
     p.add_argument("output", nargs="?", default="screen.png")
+    p.add_argument("--max-size", type=int, default=0, metavar="PX",
+                   help="scale the longest side down to PX (needs ffmpeg); a "
+                        ".jpg output name also re-encodes it")
 
     p = add("volume", cmd_volume, "up, down, mute or set the volume")
     p.add_argument("action", choices=["up", "down", "mute", "set"])
@@ -386,6 +435,32 @@ def build_parser() -> argparse.ArgumentParser:
 
     add("off", cmd_off, "put the screen to sleep")
     add("on", cmd_on, "wake the device")
+
+    p = add("mirror", cmd_mirror, "watch the screen live in a window (needs scrcpy)")
+    p.add_argument("--view-only", action="store_true",
+                   help="look, do not touch: no mouse or keyboard control")
+    p.add_argument("--record", metavar="FILE", help="also save it to an mp4/mkv")
+    p.add_argument("--max-size", type=int, metavar="PX",
+                   help="limit the longest side, e.g. 1024 over wifi")
+    p.add_argument("--fps", type=int, metavar="N", help="cap the frame rate")
+    p.add_argument("--bitrate", metavar="RATE", help="video bitrate, e.g. 4M")
+    p.add_argument("--fullscreen", action="store_true")
+    p.add_argument("--stay-awake", action="store_true",
+                   help="keep the device awake while mirroring")
+    p.add_argument("--screen-off", action="store_true",
+                   help="turn the device's own screen off (it comes back at reboot)")
+    p.add_argument("--no-audio", action="store_true")
+    p.add_argument("extra", nargs=argparse.REMAINDER,
+                   help="anything after -- goes straight to scrcpy")
+
+    p = add("record", cmd_record, "record the screen to a file, no window (needs scrcpy)")
+    p.add_argument("output", nargs="?", default="screen.mp4")
+    p.add_argument("--seconds", type=int, metavar="N", help="stop after N seconds")
+    p.add_argument("--max-size", type=int, metavar="PX")
+    p.add_argument("--fps", type=int, metavar="N")
+    p.add_argument("--bitrate", metavar="RATE")
+    p.add_argument("--no-audio", action="store_true")
+    p.add_argument("extra", nargs=argparse.REMAINDER)
 
     p = add("shell", cmd_shell, "run a raw shell command on the device")
     p.add_argument("command", nargs="+")

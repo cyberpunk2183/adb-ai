@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from . import adb
 
 # Candidates are tried in order; the TV build of an app comes first because
@@ -30,16 +32,37 @@ ALIASES: dict[str, list[str]] = {
 }
 
 
-def installed(serial: str | None = None, third_party_only: bool = False) -> list[str]:
-    """Package names present on the device."""
+# `pm list packages` is one of the slowest things we ask a device, and the
+# answer only changes when something is installed or removed. Every
+# `open`/`close` resolves a name through it, so an agent opening three apps in
+# a row paid for three listings.
+PACKAGES_TTL = 60.0
+_packages_cache: dict[tuple[str | None, bool], tuple[float, list[str]]] = {}
+
+
+def forget_packages() -> None:
+    """Drop the cached package lists - after installing or removing an app."""
+    _packages_cache.clear()
+
+
+def installed(serial: str | None = None, third_party_only: bool = False,
+              *, fresh: bool = False) -> list[str]:
+    """Package names present on the device, cached for ``PACKAGES_TTL``."""
+    key = (serial, third_party_only)
+    now = time.monotonic()
+    cached = _packages_cache.get(key)
+    if not fresh and cached is not None and now - cached[0] < PACKAGES_TTL:
+        return cached[1]
+
     flags = "pm list packages" + (" -3" if third_party_only else "")
     out = adb.shell(flags, serial=serial)
-    packages = [
+    packages = sorted(
         line.strip().removeprefix("package:")
         for line in out.splitlines()
         if line.strip().startswith("package:")
-    ]
-    return sorted(packages)
+    )
+    _packages_cache[key] = (now, packages)
+    return packages
 
 
 def resolve(name: str, serial: str | None = None) -> str:
