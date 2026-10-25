@@ -10,7 +10,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from adbai import (actions, adb, apps, cli, doctor, images, keys,  # noqa: E402
-                   mcp_server, mirror, target)
+                   mcp_server, mirror, pairing, qr, target)
 
 
 class TestKeys(unittest.TestCase):
@@ -581,6 +581,106 @@ class TestWarmUp(unittest.TestCase):
     def test_a_failing_warm_up_is_swallowed(self):
         with mock.patch.object(mcp_server.adb, "run", side_effect=OSError("boom")):
             mcp_server._warm_up()  # must not raise
+
+
+class TestQrEncoder(unittest.TestCase):
+    """The encoder has no device to tell it when it is wrong, so pin it down."""
+
+    def test_error_correction_matches_the_spec_worked_example(self):
+        # "HELLO WORLD" at version 1-M, from the specification's own walkthrough.
+        data = [32, 91, 11, 120, 209, 114, 220, 77, 67, 64, 236, 17, 236, 17, 236, 17]
+        self.assertEqual(
+            qr._ec_codewords(data, 10),
+            [196, 35, 39, 119, 235, 215, 231, 226, 93, 23],
+        )
+
+    def test_version_grows_with_the_payload(self):
+        self.assertEqual(len(qr.encode("hi")), 21)  # version 1
+        self.assertEqual(len(qr.encode("x" * 43)), 33)  # version 4
+        self.assertEqual(len(qr.encode("x" * 43, ecl="L")), 29)  # version 3 at level L
+
+    def test_finder_patterns_are_in_all_three_corners(self):
+        matrix = qr.encode("WIFI:T:ADB;S:adb-ai-0000;P:secret;;")
+        size = len(matrix)
+        for row, col in ((0, 0), (0, size - 7), (size - 7, 0)):
+            block = [r[col:col + 7] for r in matrix[row:row + 7]]
+            self.assertTrue(all(block[0]), "finder's top edge is dark")
+            self.assertTrue(block[2][2] and block[3][3] and block[4][4], "dark centre")
+            self.assertFalse(block[1][1], "the ring inside it is light")
+
+    def test_quiet_zone_and_colours_survive_rendering(self):
+        drawn = qr.render(qr.encode("hi"))
+        self.assertIn("\u2580", drawn)
+        self.assertIn("\x1b[0m", drawn)  # every line resets, or the terminal stays white
+        self.assertEqual(len(drawn.splitlines()), (21 + 8) // 2 + 1)
+
+    def test_png_is_a_png(self):
+        png = qr.to_png_bytes(qr.encode("hi"), scale=4)
+        self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertIn(b"IEND", png)
+
+    def test_a_payload_too_big_says_so(self):
+        with self.assertRaises(qr.QrError):
+            qr.encode("x" * 300)
+
+
+class TestPairing(unittest.TestCase):
+    def test_payload_is_the_shape_android_expects(self):
+        credentials = pairing.Credentials(name="adb-ai-1234", password="hunter2")
+        self.assertEqual(credentials.payload, "WIFI:T:ADB;S:adb-ai-1234;P:hunter2;;")
+
+    def test_credentials_are_random_each_time(self):
+        self.assertNotEqual(
+            pairing.new_credentials().password, pairing.new_credentials().password
+        )
+
+    def test_names_round_trip_through_the_dns_encoding(self):
+        encoded = pairing._encode_name(pairing.PAIRING_SERVICE)
+        self.assertEqual(pairing._decode_name(encoded, 0)[0], pairing.PAIRING_SERVICE)
+
+    def test_an_announcement_is_read_out_of_a_real_packet_shape(self):
+        packet = _mdns_answer("adb-ai-1234", "phone.local.", "192.168.0.42", 37419)
+        srv, hosts, ptrs = pairing._parse(packet)
+        name = "adb-ai-1234." + pairing.PAIRING_SERVICE
+        self.assertEqual(srv[name], ("phone.local.", 37419))
+        self.assertEqual(hosts["phone.local."], "192.168.0.42")
+        self.assertIn((pairing.PAIRING_SERVICE, name), ptrs)
+
+    def test_a_truncated_packet_is_ignored_not_fatal(self):
+        self.assertEqual(pairing._parse(b"\x00\x01\x02"), ({}, {}, []))
+
+    def test_the_password_goes_in_on_stdin(self):
+        done = mock.Mock(returncode=0, stdout="Successfully paired to 1.2.3.4:5", stderr="")
+        with mock.patch.object(pairing.subprocess, "run", return_value=done) as run:
+            with mock.patch.object(pairing.adb, "adb_path", return_value="adb"):
+                pairing.pair("1.2.3.4:5", "secret")
+        self.assertEqual(run.call_args.args[0], ["adb", "pair", "1.2.3.4:5"])
+        self.assertEqual(run.call_args.kwargs["input"], "secret\n")
+
+    def test_a_refused_pairing_raises_with_adbs_own_words(self):
+        done = mock.Mock(returncode=1, stdout="", stderr="failed to pair")
+        with mock.patch.object(pairing.subprocess, "run", return_value=done):
+            with mock.patch.object(pairing.adb, "adb_path", return_value="adb"):
+                with self.assertRaises(adb.AdbError) as caught:
+                    pairing.pair("1.2.3.4:5", "secret")
+        self.assertIn("failed to pair", str(caught.exception))
+
+
+def _mdns_answer(instance: str, host: str, ip: str, port: int) -> bytes:
+    """A PTR + SRV + A response, the way a phone answers a pairing query."""
+    import socket as _socket
+    import struct as _struct
+
+    full = instance + "." + pairing.PAIRING_SERVICE
+    body = b""
+    ptr = pairing._encode_name(full)
+    body += (pairing._encode_name(pairing.PAIRING_SERVICE)
+             + _struct.pack(">HHIH", 12, 1, 120, len(ptr)) + ptr)
+    srv = _struct.pack(">HHH", 0, 0, port) + pairing._encode_name(host)
+    body += pairing._encode_name(full) + _struct.pack(">HHIH", 33, 1, 120, len(srv)) + srv
+    addr = _socket.inet_aton(ip)
+    body += pairing._encode_name(host) + _struct.pack(">HHIH", 1, 1, 120, 4) + addr
+    return _struct.pack(">HHHHHH", 0, 0x8400, 0, 3, 0, 0) + body
 
 
 if __name__ == "__main__":

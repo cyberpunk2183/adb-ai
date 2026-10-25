@@ -56,6 +56,37 @@ In order of likelihood:
 The address is stale — DHCP moved the device. `adb-ai scan` and connect again.
 This is normal and will keep happening; it is why `scan` exists.
 
+### The QR code is drawn but nothing happens
+
+`adb-ai pair` waits for the device to announce its pairing port over mDNS. When
+it waits out the full minute, work down this list:
+
+1. **The code did not scan.** Hold the phone further back — a QR needs the
+   whole symbol plus its white margin in frame. If the camera never locks on,
+   the terminal is mangling it: `adb-ai pair --blocks` draws it at double size,
+   and `adb-ai pair --png code.png` writes an image to open in a viewer
+   instead.
+2. **Wrong screen on the phone.** It has to be *Wireless debugging → Pair
+   device with QR code*. A general-purpose camera or QR reader app will show
+   you the text but cannot pair — and seeing `WIFI:T:ADB;S:...` in a reader is
+   a useful way to prove the code itself is fine.
+3. **Multicast is not crossing the network.** Discovery is mDNS on
+   224.0.0.251; guest networks, client isolation and some mesh routers drop it.
+   Both devices must be on the same Wi-Fi, and that Wi-Fi must let them talk.
+   The typed flow does not need multicast:
+   ```bash
+   adb-ai pair 192.168.0.50:37123 418926
+   ```
+4. **Android 10 or older, or a TV.** There is no pairing screen to scan with.
+   TVs use port 5555 and `adb-ai connect` directly.
+
+### Can I pair the phone that Termux is running on?
+
+Not with the QR — the camera cannot read the screen it is on. And Termux's adb
+is built without mDNS, so `adb pair` fails there regardless of how the code
+arrived; see the entry below. Pair that phone from a computer once, or switch
+it to port 5555 over USB, and Termux can connect to everything afterwards.
+
 ### `adb pair` fails with `protocol fault (couldn't read status message)`
 
 Your adb was built without mDNS support, and the Android 11+ pairing flow needs

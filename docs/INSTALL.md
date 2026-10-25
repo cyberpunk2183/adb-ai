@@ -176,11 +176,29 @@ Manufacturers move this around. On Philips, Sony and TCL it is usually under
 2. **Settings → System → Developer options**
 3. Turn on **Wireless debugging**
 
-Android 11 and newer need a one-time pairing with a code:
+Android 11 and newer need a one-time pairing. Two ways through it.
+
+**By camera, which is the easy one:**
 
 ```bash
-adb pair 192.168.0.50:37123      # the port INSIDE the pairing dialog, not the one above it
-adb-ai connect 192.168.0.50:42701
+adb-ai pair
+```
+
+It draws a QR code in the terminal. On the phone, *Wireless debugging → Pair
+device with QR code*, point the camera at the screen, and that is the whole
+procedure — the phone pairs and ADB-AI connects to it. Nothing is typed, which
+also means the random port cannot be copied wrong.
+
+If the code comes out unreadable, two knobs: `--blocks` draws it twice as big
+for terminals whose font mangles the half-block character, and `--png code.png`
+writes it to an image file to open in a viewer.
+
+**By typed code**, when the camera is not an option — the device showing the
+code is the device the terminal is on, or the network blocks the discovery:
+
+```bash
+adb-ai pair 192.168.0.50:37123 418926   # the port INSIDE the pairing dialog
+adb-ai connect 192.168.0.50:42701       # the port on the main screen
 ```
 
 > **The pairing code flow needs an adb built with mDNS support.** Check yours:
@@ -194,8 +212,11 @@ adb-ai connect 192.168.0.50:42701
 > Google's official platform-tools have it. Some distribution builds do not —
 > **Termux's `android-tools` is one of them**, so pairing from Termux fails with
 > `protocol fault (couldn't read status message)` no matter how fresh the code
-> is. Workaround: pair and enable TCP from a machine whose adb does support it,
-> once, over USB:
+> is. ADB-AI does its own mDNS discovery, so it can still *find* the device on
+> such a build, but the pairing handshake itself belongs to adb and fails
+> there. (On Termux the QR is a dead end for a second reason anyway: a phone's
+> camera cannot read a code drawn on that same phone's screen.) Workaround:
+> pair and enable TCP from a machine whose adb does support it, once, over USB:
 >
 > ```bash
 > adb tcpip 5555          # on the computer, with the phone plugged in

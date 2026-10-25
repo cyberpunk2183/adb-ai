@@ -21,6 +21,13 @@ often fails today**. If a command reports *no route to host* or *no device
 connected*, run `adb-ai scan`, then `connect` the address it finds. Do not keep
 retrying the old address.
 
+A phone or tablet on Android 11+ that has never been paired with this machine
+will not connect at all until it is. `adb-ai pair` draws a QR code the user
+scans from *Wireless debugging → Pair device with QR code* — show them the
+command, tell them which screen to open, and let it run; it pairs and connects
+by itself. It needs a screen the device's camera can see, so it is a desktop
+move: it cannot pair the phone the terminal is running on.
+
 `adb-ai` uses the default device when `-d` is omitted. With several devices
 connected, pass `-d tv` (an alias) or the serial.
 

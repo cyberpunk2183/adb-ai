@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, actions, adb, apps, config, images, keys, mirror, target
+from . import __version__, actions, adb, apps, config, images, keys, mirror, pairing, qr, target
 
 
 def _out(message: str) -> None:
@@ -69,6 +69,52 @@ def cmd_connect(args: argparse.Namespace) -> int:
     if args.use or args.alias:
         config.set_default(serial)
         _out(f"default device is now {serial}")
+    return 0
+
+
+def cmd_pair(args: argparse.Namespace) -> int:
+    """Pair with an Android 11+ device, by camera or by typed code."""
+    if args.target:
+        code = args.code or input("pairing code shown on the device: ").strip()
+        _out(pairing.pair(args.target, code))
+        _out("now connect with: adb-ai connect <ip>:<port>   (the debugging port, "
+             "not the pairing one)")
+        return 0
+
+    credentials = pairing.new_credentials(name=args.name, password=args.password)
+    matrix = qr.encode(credentials.payload, ecl=args.level)
+
+    if args.png:
+        _out(f"wrote {qr.to_png(matrix, args.png)}")
+    if not args.png or args.show:
+        _out(qr.render(matrix, half_blocks=not args.blocks))
+    _out(
+        "On the device: Settings > Developer options > Wireless debugging > "
+        "'Pair device with QR code'.\n"
+        "Point its camera at the code above. Nothing to type."
+    )
+    sys.stdout.flush()  # the code has to be on screen before the wait starts
+
+    def progress(kind: str, message: str) -> None:
+        print(f"  {message}", file=sys.stderr)
+
+    result = pairing.pair_with_qr(
+        credentials, timeout=args.timeout, connect=not args.no_connect, on_event=progress
+    )
+    if args.json:
+        _json(result)
+        return 0
+    _out(str(result.get("message", "")))
+    if result.get("note"):
+        _out(str(result["note"]))
+    connected = result.get("connected")
+    if connected:
+        if args.alias:
+            config.set_alias(args.alias, adb.normalise_target(str(connected)))
+            _out(f"saved alias {args.alias!r} -> {connected}")
+        if args.use or args.alias:
+            config.set_default(adb.normalise_target(str(connected)))
+            _out(f"default device is now {connected}")
     return 0
 
 
@@ -346,6 +392,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=adb.DEFAULT_PORT)
     p.add_argument("--alias", help="remember it under this name (implies --use)")
     p.add_argument("--use", action="store_true", help="make it the default device")
+
+    p = add("pair", cmd_pair, "pair with an Android 11+ device by QR code", device=False)
+    p.add_argument("target", nargs="?", help="ip:port, to pair with a typed code instead")
+    p.add_argument("code", nargs="?", help="the six digits the device shows")
+    p.add_argument("--timeout", type=float, default=60.0, help="seconds to wait for the scan")
+    p.add_argument("--blocks", action="store_true",
+                   help="draw the code twice as large, for terminals that mangle half blocks")
+    p.add_argument("--level", choices=["L", "M"], default="M",
+                   help="error correction; L draws a smaller code")
+    p.add_argument("--png", metavar="FILE", help="also write the code to a PNG file")
+    p.add_argument("--show", action="store_true", help="draw in the terminal even with --png")
+    p.add_argument("--name", help="service name to advertise (default: adb-ai-<random>)")
+    p.add_argument("--password", help="pairing password (default: random, single use)")
+    p.add_argument("--no-connect", action="store_true", help="pair only, do not connect")
+    p.add_argument("--alias", help="remember the connected device under this name")
+    p.add_argument("--use", action="store_true", help="make it the default device")
+    p.add_argument("--json", action="store_true")
 
     p = add("disconnect", cmd_disconnect, "drop a network connection", device=False)
     p.add_argument("target", nargs="?")

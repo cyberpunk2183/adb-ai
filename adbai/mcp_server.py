@@ -18,7 +18,7 @@ import threading
 import traceback
 from typing import Any, Callable
 
-from . import __version__, actions, adb, apps, images, keys, mirror, target
+from . import __version__, actions, adb, apps, images, keys, mirror, pairing, qr, target
 
 PROTOCOL_VERSION = "2024-11-05"
 
@@ -70,6 +70,49 @@ def tool_scan(args: dict[str, Any]) -> dict[str, Any]:
 
 def tool_connect(args: dict[str, Any]) -> dict[str, Any]:
     return _text(adb.connect(args["target"]))
+
+
+# A QR pairing is two calls: one to put the code on the screen the human is
+# looking at, one to wait for the camera. Holding the credentials between them
+# is what lets the agent show the code and then block on the scan without a
+# single call sitting there for a minute.
+_PENDING: dict[str, pairing.Credentials] = {}
+
+
+def tool_pair_qr_start(args: dict[str, Any]) -> dict[str, Any]:
+    credentials = pairing.new_credentials()
+    _PENDING["current"] = credentials
+    matrix = qr.encode(credentials.payload, ecl="M")
+    return {
+        "content": [
+            {
+                "type": "image",
+                "data": base64.b64encode(qr.to_png_bytes(matrix, scale=8)).decode("ascii"),
+                "mimeType": "image/png",
+            },
+            {
+                "type": "text",
+                "text": "Show this code to the person and tell them: on the device, "
+                        "Settings > Developer options > Wireless debugging > 'Pair "
+                        "device with QR code', then point the camera at it. Call "
+                        "adb_pair_qr_finish once they are pointing at it - it waits "
+                        "for the scan. Pairing is for Android 11+; a TV has no such "
+                        "screen and pairs with adb_connect instead.",
+            },
+        ]
+    }
+
+
+def tool_pair_qr_finish(args: dict[str, Any]) -> dict[str, Any]:
+    credentials = _PENDING.get("current")
+    if credentials is None:
+        raise ValueError("no pairing in progress - call adb_pair_qr_start first")
+    timeout = float(args.get("timeout_seconds") or 60)
+    try:
+        result = pairing.pair_with_qr(credentials, timeout=timeout)
+    finally:
+        _PENDING.pop("current", None)
+    return _data(result)
 
 
 def tool_key(args: dict[str, Any]) -> dict[str, Any]:
@@ -268,6 +311,27 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {"type": "object", "properties": {
             "target": {"type": "string"}}, "required": ["target"]},
         "handler": tool_connect,
+    },
+    {
+        "name": "adb_pair_qr_start",
+        "description": "Begin pairing an Android 11+ phone or tablet by QR code. "
+                       "Returns a QR image to show the person; they point the "
+                       "device's camera at it from Wireless debugging > 'Pair device "
+                       "with QR code'. Then call adb_pair_qr_finish. Use this when a "
+                       "device has never been paired with this machine; an "
+                       "already-paired device just needs adb_connect.",
+        "inputSchema": {"type": "object", "properties": {}},
+        "handler": tool_pair_qr_start,
+    },
+    {
+        "name": "adb_pair_qr_finish",
+        "description": "Wait for the device to scan the code from adb_pair_qr_start, "
+                       "pair with it, and connect. Blocks until it happens or the "
+                       "timeout runs out.",
+        "inputSchema": {"type": "object", "properties": {
+            "timeout_seconds": {"type": "integer",
+                                "description": "how long to wait, default 60"}}},
+        "handler": tool_pair_qr_finish,
     },
     {
         "name": "adb_key",

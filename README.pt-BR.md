@@ -98,11 +98,21 @@ clique em **Versão** sete vezes → volte → **Opções do desenvolvedor** →
 
 **Celular/tablet:** Configurações → Sobre → toque em **Número da versão** sete
 vezes → Opções do desenvolvedor → **Depuração sem fio**. No Android 11+ precisa
-parear uma vez: `adb pair IP:PORTA` com o código que a tela mostra — use o
-IP:porta que aparece **dentro** do diálogo do código, que é diferente do de
-cima. Se der `protocol fault`, seu `adb` foi compilado sem mDNS (é o caso do
-Termux): confira com `adb mdns check` e veja a
-[solução](docs/TROUBLESHOOTING.md).
+parear uma vez, e o caminho mais curto é pela câmera:
+
+```bash
+adb-ai pair          # desenha um QR; o celular lê e pareia sozinho
+```
+
+No celular: *Depuração sem fio → Parear usando QR code*. Não se digita nada —
+nem IP, nem porta, nem os seis dígitos. Pareia e conecta de uma vez.
+
+Dá pra parear digitando também: `adb-ai pair IP:PORTA CÓDIGO`, com o IP:porta
+que aparece **dentro** do diálogo do código, que é diferente do de cima.
+
+Se der `protocol fault`, seu `adb` foi compilado sem mDNS (é o caso do Termux)
+e **nenhuma das duas formas funciona nesse binário**: confira com
+`adb mdns check` e veja a [solução](docs/TROUBLESHOOTING.md).
 
 Na primeira conexão **o aparelho mostra um aviso** perguntando se permite este
 computador. Marque *Sempre permitir* e aceite — sem isso não conecta.

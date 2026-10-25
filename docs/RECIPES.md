@@ -349,6 +349,12 @@ Worth knowing before you file a bug:
 - **Controlling a device that is off**, or asleep in a way that drops Wi-Fi.
   Most TVs do exactly that; wake it with its real remote once.
 - **Anything needing root** — this uses the ordinary shell user.
+- **Pairing an Android 11+ phone by camera.** `adb-ai pair` draws a QR code;
+  the phone reads it from *Wireless debugging → Pair device with QR code* and
+  pairs itself. `--png code.png` writes it to an image when the terminal's font
+  will not draw it cleanly. An agent can do the same through
+  `adb_pair_qr_start`, which hands it the code as an image to show you, and
+  `adb_pair_qr_finish`, which waits for the scan.
 - **Pairing an Android 11+ phone from an adb without mDNS** (Termux's build, for
   one). Not a limitation of ADB-AI; see
   [troubleshooting](TROUBLESHOOTING.md#adb-pair-fails-with-protocol-fault-couldnt-read-status-message).

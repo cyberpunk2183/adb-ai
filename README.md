@@ -193,8 +193,16 @@ This is the step people get stuck on.
   *Build* seven times → back → Developer options → enable **Network debugging**
   (sometimes *ADB debugging* / *USB debugging*).
 - **Phone or tablet:** Settings → About → tap *Build number* seven times →
-  Developer options → enable **Wireless debugging**. Newer Android versions
-  need a pairing code: `adb pair <ip>:<port>` once, then `adb-ai connect`.
+  Developer options → enable **Wireless debugging**. Android 11 and newer want
+  a one-time pairing first, and the shortest way through it is the camera:
+
+  ```bash
+  adb-ai pair          # draws a QR; the phone scans it and pairs itself
+  ```
+
+  On the phone: *Wireless debugging → Pair device with QR code*. Nothing to
+  type — no IP, no port, no six digits. It pairs and connects in one go.
+  (`adb-ai pair <ip>:<port> <code>` still does it the typed way.)
 - **USB first, wireless after:** plug it in, run `adb tcpip 5555`, unplug, then
   `adb-ai scan`.
 
@@ -206,6 +214,8 @@ computer. Say yes and tick *always allow*, or nothing will connect.
 ```
 adb-ai devices                      list what adb knows about
 adb-ai scan [192.168.0.]            find devices on the local network
+adb-ai pair                         pair an Android 11+ phone by QR code
+                 --png code.png     write the code to a file instead
 adb-ai connect <ip> [--alias tv]    connect, optionally remember the name
 adb-ai use <alias|serial>           set the default device
 adb-ai alias [name] [target]        name a device, or list the names
