@@ -106,6 +106,11 @@ def cmd_pair(args: argparse.Namespace) -> int:
         _out(pairing.pair(args.target, code))
         _out("now connect with: adb-ai connect <ip>:<port>   (the debugging port, "
              "not the pairing one)")
+        if args.mirror:
+            # Pairing by code hands back the pairing port; the debugging port is
+            # a different number this command never learns. There is nothing to
+            # mirror yet, so name the command that can rather than drop the flag.
+            _out("--mirror needs a connection: adb-ai connect <ip>:<port> --mirror")
         return 0
 
     credentials = pairing.new_credentials(name=args.name, password=args.password)

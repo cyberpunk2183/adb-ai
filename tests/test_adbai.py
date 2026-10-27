@@ -727,6 +727,13 @@ class TestMirrorAfterConnect(unittest.TestCase):
         mirrored.assert_not_called()
         self.assertIn("nothing to mirror", out.getvalue())
 
+    def test_typed_pairing_says_why_it_cannot_mirror(self):
+        out = io.StringIO()
+        with mock.patch.object(cli.pairing, "pair", return_value="paired"),              mock.patch.object(cli.mirror, "mirror") as mirrored,              contextlib.redirect_stdout(out):
+            self.assertEqual(cli.main(["pair", "1.2.3.4:5555", "123456", "--mirror"]), 0)
+        mirrored.assert_not_called()
+        self.assertIn("--mirror needs a connection", out.getvalue())
+
     def test_connect_mirror_mirrors_the_normalised_serial(self):
         with mock.patch.object(cli.adb, "connect", return_value="connected"),              mock.patch.object(cli.mirror, "preflight", return_value="/usr/bin/scrcpy"),              mock.patch.object(cli.mirror, "mirror", return_value=0) as mirrored,              self._silence():
             self.assertEqual(cli.main(["connect", "192.168.0.5", "--mirror"]), 0)
