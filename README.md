@@ -197,12 +197,19 @@ This is the step people get stuck on.
   a one-time pairing first, and the shortest way through it is the camera:
 
   ```bash
-  adb-ai pair          # draws a QR; the phone scans it and pairs itself
+  adb-ai pair            # draws a QR; the phone scans it and pairs itself
+  adb-ai pair --mirror   # the same, and the screen opens when it connects
   ```
 
   On the phone: *Wireless debugging → Pair device with QR code*. Nothing to
   type — no IP, no port, no six digits. It pairs and connects in one go.
   (`adb-ai pair <ip>:<port> <code>` still does it the typed way.)
+
+  `--mirror` carries straight on into scrcpy, so a new phone goes from a QR
+  code to a window on your desk in one command. It works the same on
+  `adb-ai scan --mirror` and `adb-ai connect <ip> --mirror`. scrcpy is
+  optional, so when it is missing — and under Termux, where it cannot run at
+  all — the pairing is still reported and only the window is skipped.
 - **USB first, wireless after:** plug it in, run `adb tcpip 5555`, unplug, then
   `adb-ai scan`.
 
@@ -214,9 +221,12 @@ computer. Say yes and tick *always allow*, or nothing will connect.
 ```
 adb-ai devices                      list what adb knows about
 adb-ai scan [192.168.0.]            find devices on the local network
+                 --mirror           connect to the one found and watch it
 adb-ai pair                         pair an Android 11+ phone by QR code
                  --png code.png     write the code to a file instead
+                 --mirror           open scrcpy the moment it connects
 adb-ai connect <ip> [--alias tv]    connect, optionally remember the name
+                 --mirror           open scrcpy once connected
 adb-ai use <alias|serial>           set the default device
 adb-ai alias [name] [target]        name a device, or list the names
 

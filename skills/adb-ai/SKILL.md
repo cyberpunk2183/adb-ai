@@ -28,6 +28,13 @@ command, tell them which screen to open, and let it run; it pairs and connects
 by itself. It needs a screen the device's camera can see, so it is a desktop
 move: it cannot pair the phone the terminal is running on.
 
+Add `--mirror` when the user wants to watch the phone straight away: it opens
+scrcpy as soon as the pairing connects, and `adb-ai scan --mirror` and
+`adb-ai connect <ip> --mirror` do the same from the other two directions. It
+blocks until the window is closed, so run it the way you would run
+`adb-ai mirror`. On Termux, or anywhere scrcpy is missing, the connection is
+still made and reported - only the window is skipped.
+
 `adb-ai` uses the default device when `-d` is omitted. With several devices
 connected, pass `-d tv` (an alias) or the serial.
 

@@ -101,11 +101,18 @@ vezes → Opções do desenvolvedor → **Depuração sem fio**. No Android 11+ 
 parear uma vez, e o caminho mais curto é pela câmera:
 
 ```bash
-adb-ai pair          # desenha um QR; o celular lê e pareia sozinho
+adb-ai pair            # desenha um QR; o celular lê e pareia sozinho
+adb-ai pair --mirror   # o mesmo, e a tela abre assim que conectar
 ```
 
 No celular: *Depuração sem fio → Parear usando QR code*. Não se digita nada —
 nem IP, nem porta, nem os seis dígitos. Pareia e conecta de uma vez.
+
+O `--mirror` emenda direto no scrcpy: um celular novo sai do QR code para uma
+janela na sua mesa em um comando só. Vale igual em `adb-ai scan --mirror` e
+`adb-ai connect <ip> --mirror`. O scrcpy é opcional, então quando ele falta —
+e no Termux, onde não roda de jeito nenhum — o pareamento é informado do mesmo
+jeito e só a janela fica de fora.
 
 Dá pra parear digitando também: `adb-ai pair IP:PORTA CÓDIGO`, com o IP:porta
 que aparece **dentro** do diálogo do código, que é diferente do de cima.

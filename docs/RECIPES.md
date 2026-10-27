@@ -352,9 +352,13 @@ Worth knowing before you file a bug:
 - **Pairing an Android 11+ phone by camera.** `adb-ai pair` draws a QR code;
   the phone reads it from *Wireless debugging → Pair device with QR code* and
   pairs itself. `--png code.png` writes it to an image when the terminal's font
-  will not draw it cleanly. An agent can do the same through
-  `adb_pair_qr_start`, which hands it the code as an image to show you, and
-  `adb_pair_qr_finish`, which waits for the scan.
+  will not draw it cleanly. `--mirror` carries on into scrcpy the moment the
+  phone connects, which turns a brand-new device into a window in one command;
+  the same flag works on `adb-ai scan --mirror` and `adb-ai connect --mirror`.
+  Where scrcpy is missing, and under Termux where it cannot run at all, the
+  pairing still succeeds and only the window is skipped. An agent can do the
+  same through `adb_pair_qr_start`, which hands it the code as an image to show
+  you, and `adb_pair_qr_finish`, which waits for the scan.
 - **Pairing an Android 11+ phone from an adb without mDNS** (Termux's build, for
   one). Not a limitation of ADB-AI; see
   [troubleshooting](TROUBLESHOOTING.md#adb-pair-fails-with-protocol-fault-couldnt-read-status-message).

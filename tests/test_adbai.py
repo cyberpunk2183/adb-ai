@@ -683,5 +683,70 @@ def _mdns_answer(instance: str, host: str, ip: str, port: int) -> bytes:
     return _struct.pack(">HHHHHH", 0, 0x8400, 0, 3, 0, 0) + body
 
 
+class TestMirrorAfterConnect(unittest.TestCase):
+    """--mirror turns reaching a device into watching it, in one command.
+
+    The rule these pin down: the connection is the result, the window is the
+    bonus. A machine with no scrcpy - Termux can never have one - still gets
+    its pairing reported, and a zero exit code.
+    """
+
+    def _silence(self):
+        return contextlib.redirect_stdout(io.StringIO())
+
+    def _paired(self, connected="192.168.0.5:37123"):
+        return mock.patch.object(
+            cli.pairing, "pair_with_qr",
+            return_value={"message": "paired", "connected": connected},
+        )
+
+    def test_pair_mirror_opens_scrcpy_on_the_device_it_just_reached(self):
+        with self._paired(),              mock.patch.object(cli.mirror, "preflight", return_value="/usr/bin/scrcpy"),              mock.patch.object(cli.mirror, "mirror", return_value=0) as mirrored,              self._silence():
+            self.assertEqual(cli.main(["pair", "--mirror"]), 0)
+        mirrored.assert_called_once()
+        self.assertEqual(mirrored.call_args.args[0], "192.168.0.5:37123")
+
+    def test_pair_without_mirror_leaves_scrcpy_alone(self):
+        with self._paired(),              mock.patch.object(cli.mirror, "mirror") as mirrored,              self._silence():
+            self.assertEqual(cli.main(["pair"]), 0)
+        mirrored.assert_not_called()
+
+    def test_termux_reports_the_pairing_instead_of_failing_it(self):
+        refuse = mock.Mock(side_effect=adb.AdbError(mirror.TERMUX_NOTE))
+        out = io.StringIO()
+        with self._paired(),              mock.patch.object(cli.mirror, "preflight", refuse),              mock.patch.object(cli.mirror, "mirror") as mirrored,              contextlib.redirect_stdout(out):
+            self.assertEqual(cli.main(["pair", "--mirror"]), 0)
+        mirrored.assert_not_called()
+        self.assertIn("not mirroring", out.getvalue())
+        self.assertIn("Termux", out.getvalue())
+
+    def test_pairing_without_a_connection_has_nothing_to_mirror(self):
+        out = io.StringIO()
+        with self._paired(connected=None),              mock.patch.object(cli.mirror, "mirror") as mirrored,              contextlib.redirect_stdout(out):
+            self.assertEqual(cli.main(["pair", "--mirror"]), 0)
+        mirrored.assert_not_called()
+        self.assertIn("nothing to mirror", out.getvalue())
+
+    def test_connect_mirror_mirrors_the_normalised_serial(self):
+        with mock.patch.object(cli.adb, "connect", return_value="connected"),              mock.patch.object(cli.mirror, "preflight", return_value="/usr/bin/scrcpy"),              mock.patch.object(cli.mirror, "mirror", return_value=0) as mirrored,              self._silence():
+            self.assertEqual(cli.main(["connect", "192.168.0.5", "--mirror"]), 0)
+        self.assertEqual(mirrored.call_args.args[0], "192.168.0.5:5555")
+
+    def test_scan_mirror_connects_to_the_single_device_it_found(self):
+        with mock.patch.object(cli.adb, "scan", return_value=["192.168.0.5:5555"]),              mock.patch.object(cli.adb, "connect", return_value="connected") as connected,              mock.patch.object(cli.mirror, "preflight", return_value="/usr/bin/scrcpy"),              mock.patch.object(cli.mirror, "mirror", return_value=0) as mirrored,              self._silence():
+            self.assertEqual(cli.main(["scan", "--mirror"]), 0)
+        connected.assert_called_once()
+        self.assertEqual(mirrored.call_args.args[0], "192.168.0.5:5555")
+
+    def test_scan_mirror_refuses_to_guess_between_two_devices(self):
+        out = io.StringIO()
+        with mock.patch.object(cli.adb, "scan",
+                               return_value=["192.168.0.5:5555", "192.168.0.9:5555"]),              mock.patch.object(cli.adb, "connect") as connected,              mock.patch.object(cli.mirror, "mirror") as mirrored,              contextlib.redirect_stdout(out):
+            self.assertEqual(cli.main(["scan", "--mirror"]), 1)
+        connected.assert_not_called()
+        mirrored.assert_not_called()
+        self.assertIn("pick one", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

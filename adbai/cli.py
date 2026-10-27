@@ -41,6 +41,24 @@ def cmd_devices(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mirror_connected(serial: str) -> int:
+    """Open scrcpy on a device we have just reached, as the last step of
+    scanning, connecting or pairing.
+
+    The connection is what was asked for; the window is the bonus. scrcpy is
+    optional and cannot run at all under Termux, so a missing mirror says why
+    and leaves the exit code alone - nobody should be told their pairing
+    failed because a second binary is absent.
+    """
+    try:
+        mirror.preflight()
+    except adb.AdbError as exc:
+        _out(f"connected, but not mirroring: {exc}")
+        return 0
+    _out(f"mirroring {serial} - close the window to stop")
+    return mirror.mirror(serial, title=f"adb-ai {serial}")
+
+
 def cmd_scan(args: argparse.Namespace) -> int:
     found = adb.scan(prefix=args.subnet, port=args.port, timeout=args.timeout)
     if args.json:
@@ -56,6 +74,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
         return 1
     for address in found:
         _out(address)
+    if args.mirror:
+        if len(found) > 1:
+            _out("more than one device answered - pick one:")
+            _out("  adb-ai connect <ip> --mirror")
+            return 1
+        _out(adb.connect(found[0], port=args.port))
+        return _mirror_connected(adb.normalise_target(found[0], args.port))
     return 0
 
 
@@ -69,6 +94,8 @@ def cmd_connect(args: argparse.Namespace) -> int:
     if args.use or args.alias:
         config.set_default(serial)
         _out(f"default device is now {serial}")
+    if args.mirror:
+        return _mirror_connected(serial)
     return 0
 
 
@@ -115,6 +142,10 @@ def cmd_pair(args: argparse.Namespace) -> int:
         if args.use or args.alias:
             config.set_default(adb.normalise_target(str(connected)))
             _out(f"default device is now {connected}")
+        if args.mirror:
+            return _mirror_connected(adb.normalise_target(str(connected)))
+    elif args.mirror:
+        _out("nothing to mirror: pairing finished without a connection")
     return 0
 
 
@@ -385,6 +416,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("subnet", nargs="?", help="prefix such as 192.168.0.")
     p.add_argument("--port", type=int, default=adb.DEFAULT_PORT)
     p.add_argument("--timeout", type=float, default=0.4, help="per-host timeout")
+    p.add_argument("--mirror", action="store_true",
+                   help="connect to the one device found and open scrcpy")
     p.add_argument("--json", action="store_true")
 
     p = add("connect", cmd_connect, "connect to a device over the network", device=False)
@@ -392,6 +425,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=adb.DEFAULT_PORT)
     p.add_argument("--alias", help="remember it under this name (implies --use)")
     p.add_argument("--use", action="store_true", help="make it the default device")
+    p.add_argument("--mirror", action="store_true",
+                   help="open scrcpy once connected")
 
     p = add("pair", cmd_pair, "pair with an Android 11+ device by QR code", device=False)
     p.add_argument("target", nargs="?", help="ip:port, to pair with a typed code instead")
@@ -408,6 +443,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-connect", action="store_true", help="pair only, do not connect")
     p.add_argument("--alias", help="remember the connected device under this name")
     p.add_argument("--use", action="store_true", help="make it the default device")
+    p.add_argument("--mirror", action="store_true",
+                   help="open scrcpy once paired and connected")
     p.add_argument("--json", action="store_true")
 
     p = add("disconnect", cmd_disconnect, "drop a network connection", device=False)
