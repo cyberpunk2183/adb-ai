@@ -1,4 +1,12 @@
-# ADB-AI
+<p align="center">
+  <img src="docs/img/brasil.gif" alt="Bandeira do Brasil / Flag of Brazil" width="640">
+</p>
+
+<p align="center">
+  🇧🇷 <strong>Proudly made by Brazilians · Feito com orgulho por brasileiros</strong> 🇧🇷
+</p>
+
+# ADB-AI 🇧🇷
 
 **Say it out loud. The room does the rest.**
 
@@ -360,4 +368,4 @@ the US, and fixes for device quirks like the screenshot one above.
 
 ## Licence
 
-MIT © 2026 cyberpunk2183
+MIT © 2026 cyberpunk2183 🇧🇷

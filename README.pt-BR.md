@@ -1,4 +1,12 @@
-# ADB-AI
+<p align="center">
+  <img src="docs/img/brasil.gif" alt="Bandeira do Brasil" width="640">
+</p>
+
+<p align="center">
+  🇧🇷 <strong>Feito com orgulho por brasileiros</strong> 🇧🇷
+</p>
+
+# ADB-AI 🇧🇷
 
 **Você fala. A casa obedece.**
 
@@ -246,4 +254,4 @@ Política de segurança e checklist: **[SECURITY.md](SECURITY.md)**.
 
 ## Licença
 
-MIT © 2026 cyberpunk2183
+MIT © 2026 cyberpunk2183 🇧🇷
