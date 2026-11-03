@@ -3,14 +3,16 @@
 import contextlib
 import io
 import sys
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from adbai import (actions, adb, apps, cli, doctor, images, keys,  # noqa: E402
-                   mcp_server, mirror, pairing, qr, target)
+from adbai import (actions, adb, apps, cli, doctor, images, keys, live,  # noqa: E402
+                   mcp_server, mirror, pairing, qr, target, ui)
 
 
 class TestKeys(unittest.TestCase):
@@ -753,6 +755,306 @@ class TestMirrorAfterConnect(unittest.TestCase):
         connected.assert_not_called()
         mirrored.assert_not_called()
         self.assertIn("pick one", out.getvalue())
+
+
+def _jpeg(width, height, body=b"\x12\x34"):
+    """The smallest thing jpeg_size and split_jpegs will accept as a JPEG."""
+    sof = (b"\xff\xc0\x00\x11\x08" + height.to_bytes(2, "big") + width.to_bytes(2, "big")
+           + b"\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01")
+    return live.SOI + b"\xff\xe0\x00\x04JF" + sof + b"\xff\xda" + body + live.EOI
+
+
+class TestLiveFrames(unittest.TestCase):
+    def test_jpeg_size_reads_the_frame_header(self):
+        self.assertEqual(live.jpeg_size(_jpeg(576, 1280)), (576, 1280))
+
+    def test_split_takes_whole_pictures_and_keeps_the_rest(self):
+        one, two = _jpeg(10, 20), _jpeg(30, 40)
+        buffer = bytearray(b"noise" + one + two[:7])
+        self.assertEqual(live.split_jpegs(buffer), [one])
+        buffer += two[7:]
+        self.assertEqual(live.split_jpegs(buffer), [two])
+        self.assertEqual(buffer, bytearray())
+
+    def test_split_survives_a_marker_cut_in_half(self):
+        picture = _jpeg(10, 20)
+        buffer = bytearray(b"junk\xff")
+        self.assertEqual(live.split_jpegs(buffer), [])
+        buffer += picture[1:]
+        self.assertEqual(live.split_jpegs(buffer), [picture])
+
+
+class TestLiveCommands(unittest.TestCase):
+    def setUp(self):
+        live._fps_mode_flag = "-fps_mode"
+
+    def test_screenrecord_reads_stdin_with_no_frame_held_back(self):
+        cmd = live.ffmpeg_command("ffmpeg", "screenrecord")
+        self.assertEqual(cmd[cmd.index("-i") + 1], "pipe:0")
+        # Every one of these held the last frame back until the next arrived.
+        self.assertNotIn("nobuffer", cmd)
+        self.assertEqual(cmd.count("-threads"), 2)
+        filters = cmd[cmd.index("-vf") + 1]
+        self.assertNotIn("fps=", filters)
+        self.assertTrue(filters.startswith("mpdecimate"))
+        self.assertIn("format=yuvj420p", filters)
+        self.assertEqual(cmd[cmd.index("-fps_mode") + 1], "vfr")
+
+    def test_v4l2_reads_the_loopback_device(self):
+        cmd = live.ffmpeg_command("ffmpeg", "v4l2", device="/dev/video9")
+        self.assertEqual(cmd[cmd.index("-f") + 1], "v4l2")
+        self.assertEqual(cmd[cmd.index("-i") + 1], "/dev/video9")
+        with self.assertRaises(ValueError):
+            live.ffmpeg_command("ffmpeg", "v4l2")
+
+    def test_encode_size_shrinks_to_multiples_of_16(self):
+        self.assertEqual(live.encode_size(1080, 2400, 1280), (576, 1280))
+        self.assertIsNone(live.encode_size(720, 1280, 1280))
+        self.assertIsNone(live.encode_size(1080, 2400, 0))
+
+    def test_screenrecord_writes_h264_to_stdout(self):
+        args = live.screenrecord_command((576, 1280))
+        self.assertIn("--output-format=h264", args)
+        self.assertIn("--size=576x1280", args)
+        self.assertEqual(args[-1], "-")
+        self.assertNotIn("--size", " ".join(live.screenrecord_command(None)))
+
+
+class TestLivePump(unittest.TestCase):
+    def test_a_quiet_device_gets_its_frame_ended(self):
+        chunks = iter([b"frame-one", b"frame-two"])
+        written = []
+
+        def read():
+            try:
+                return next(chunks)
+            except StopIteration:
+                time.sleep(0.15)  # the screen stopped changing
+                return b""
+
+        live.pump(read, written.append, idle=0.02)
+        self.assertIn(live.AUD, written)
+        # The delimiter comes after the data, never in the middle of it.
+        self.assertEqual(written[-1], live.AUD)
+        self.assertEqual(b"".join(w for w in written if w != live.AUD),
+                         b"frame-oneframe-two")
+
+    def test_nothing_is_added_to_an_idle_stream_that_never_started(self):
+        written = []
+        live.pump(lambda: b"", written.append, idle=0.01)
+        self.assertEqual(written, [])
+
+
+class TestLiveSource(unittest.TestCase):
+    def test_loopback_devices_are_the_virtual_ones(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "devices/virtual/video4linux/video2").mkdir(parents=True)
+            (root / "devices/pci0000/usb1/video4linux/video0").mkdir(parents=True)
+            classes = root / "class"
+            classes.mkdir()
+            (classes / "video2").symlink_to(root / "devices/virtual/video4linux/video2")
+            (classes / "video0").symlink_to(root / "devices/pci0000/usb1/video4linux/video0")
+            with mock.patch.object(live.sys, "platform", "linux"):
+                self.assertEqual(live.loopback_devices(classes), ["/dev/video2"])
+
+    def test_auto_shares_scrcpys_capture_when_it_can(self):
+        with mock.patch.object(live, "loopback_devices", return_value=["/dev/video2"]), \
+             mock.patch.object(live.mirror, "headless", return_value=False), \
+             mock.patch.object(live.mirror, "scrcpy_path", return_value="/usr/bin/scrcpy"), \
+             mock.patch.dict(live.os.environ, {}, clear=False):
+            live.os.environ.pop("ADBAI_V4L2", None)
+            self.assertEqual(live.pick_source("auto"), ("v4l2", "/dev/video2"))
+
+    def test_auto_falls_back_to_screenrecord(self):
+        with mock.patch.object(live, "loopback_devices", return_value=[]):
+            self.assertEqual(live.pick_source(None), ("screenrecord", None))
+
+    def test_asking_for_v4l2_without_a_loopback_says_how_to_get_one(self):
+        with mock.patch.object(live, "loopback_devices", return_value=[]), \
+             mock.patch.object(live.sys, "platform", "linux"):
+            with self.assertRaises(adb.AdbError) as caught:
+                live.pick_source("v4l2")
+        self.assertIn("modprobe v4l2loopback", str(caught.exception))
+
+    def test_unknown_source_is_refused(self):
+        with self.assertRaises(ValueError):
+            live.pick_source("webcam")
+
+
+class TestLiveWaiting(unittest.TestCase):
+    """wait_settled against frames pushed in by hand, as the reader thread would."""
+
+    def _view(self):
+        view = live.LiveView("dev", window=False)
+        view.screen = (1080, 2400)
+        return view
+
+    def _push(self, view, delay):
+        def later():
+            time.sleep(delay)
+            with view._cond:
+                view._seq += 1
+                view._frame = live.Frame(view._seq, time.monotonic(), _jpeg(540, 1200))
+                view._cond.notify_all()
+        threading.Thread(target=later, daemon=True).start()
+
+    def test_settled_after_the_changes_stop(self):
+        view = self._view()
+        for delay in (0.05, 0.1, 0.15):
+            self._push(view, delay)
+        frame, how = view.wait_settled(0, quiet=0.1, timeout=2)
+        self.assertEqual((frame.seq, how), (3, "settled"))
+
+    def test_unchanged_when_nothing_happens(self):
+        view = self._view()
+        view._seq = 1
+        view._frame = live.Frame(1, time.monotonic(), _jpeg(540, 1200))
+        frame, how = view.wait_settled(1, change=0.05)
+        self.assertEqual((frame.seq, how), (1, "unchanged"))
+
+    def test_describe_says_how_to_aim(self):
+        view = self._view()
+        frame = live.Frame(4, time.monotonic(), _jpeg(540, 1200))
+        self.assertIn("multiply what you see by 2.000", view.describe(frame))
+
+
+SAMPLE_UI = """<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0">
+<node text="" resource-id="" class="android.widget.FrameLayout" content-desc="" clickable="false" bounds="[0,0][1080,2400]">
+<node text="Save" resource-id="com.app:id/save" class="android.widget.Button" content-desc="" clickable="true" bounds="[100,200][300,300]" />
+<node text="Saved items" resource-id="" class="android.widget.TextView" content-desc="" clickable="false" bounds="[0,400][1080,500]" />
+<node text="" resource-id="com.app:id/menu" class="android.widget.ImageButton" content-desc="More options" clickable="true" bounds="[980,0][1080,100]" />
+<node text="Hidden" resource-id="" class="android.widget.TextView" content-desc="" clickable="false" bounds="[0,0][0,0]" />
+</node></hierarchy>"""
+
+
+class TestUi(unittest.TestCase):
+    def test_parse_keeps_what_an_agent_can_use(self):
+        items = ui.parse(SAMPLE_UI)
+        self.assertEqual([item.label for item in items], ["Save", "Saved items", "More options"])
+        self.assertEqual(items[0].center, (200, 250))
+        self.assertEqual(items[0].as_dict()["id"], "save")
+
+    def test_exact_beats_partial_and_description_counts(self):
+        items = ui.parse(SAMPLE_UI)
+        self.assertEqual(ui.find(items, "save")[0].text, "Save")
+        self.assertEqual([item.label for item in ui.find(items, "save")], ["Save", "Saved items"])
+        self.assertEqual(ui.find(items, "more options")[0].center, (1030, 50))
+        self.assertEqual(ui.find(items, "nothing like it"), [])
+
+    def test_dump_from_dev_tty_is_trimmed(self):
+        noisy = SAMPLE_UI + "\nUI hierchary dumped to: /dev/tty\n"
+        with mock.patch.object(ui.adb, "run", return_value=mock.Mock(stdout=noisy)):
+            self.assertTrue(ui.dump_xml("dev").endswith("</hierarchy>"))
+
+    def test_tap_text_taps_the_centre(self):
+        with mock.patch.object(ui, "dump_xml", return_value=SAMPLE_UI), \
+             mock.patch.object(ui.actions, "tap") as tapped:
+            message = ui.tap_text("Save", serial="dev")
+        tapped.assert_called_once_with(200, 250, serial="dev")
+        self.assertIn("2 matches", message)
+
+    def test_no_match_lists_what_is_there(self):
+        with mock.patch.object(ui, "dump_xml", return_value=SAMPLE_UI):
+            with self.assertRaises(LookupError) as caught:
+                ui.tap_text("Delete", serial="dev")
+        self.assertIn("'More options'", str(caught.exception))
+
+
+class TestLiveTools(unittest.TestCase):
+    def test_new_tools_are_listed(self):
+        names = {tool["name"] for tool in mcp_server.TOOLS}
+        self.assertTrue({"adb_live", "adb_look", "adb_wait_change", "adb_ui",
+                         "adb_tap_text"} <= names)
+
+    def test_actions_offer_look(self):
+        for tool in mcp_server.TOOLS:
+            if tool["name"] in {"adb_tap", "adb_tap_text", "adb_key", "adb_swipe",
+                                "adb_scroll", "adb_type_text", "adb_open_app"}:
+                self.assertIn("look", tool["inputSchema"]["properties"], tool["name"])
+
+    def test_no_look_is_just_the_action(self):
+        with mock.patch.object(mcp_server.target, "resolve", return_value="dev"), \
+             mock.patch.object(mcp_server.actions, "tap", return_value="tapped 1,2") as tapped, \
+             mock.patch.object(mcp_server.live, "get") as get:
+            result = mcp_server.tool_tap({"x": 1, "y": 2})
+        tapped.assert_called_once()
+        get.assert_not_called()
+        self.assertEqual(result["content"][0]["text"], "tapped 1,2")
+
+    def test_look_with_live_view_returns_the_settled_frame(self):
+        view = mock.Mock()
+        view.seq.return_value = 7
+        frame = live.Frame(9, time.monotonic(), _jpeg(540, 1200))
+        view.wait_settled.return_value = (frame, "settled")
+        view.describe.return_value = "frame 9"
+        with mock.patch.object(mcp_server.target, "resolve", return_value="dev"), \
+             mock.patch.object(mcp_server.actions, "tap", return_value="tapped 1,2"), \
+             mock.patch.object(mcp_server.live, "get", return_value=view):
+            result = mcp_server.tool_tap({"x": 1, "y": 2, "look": True})
+        view.wait_settled.assert_called_once_with(7)
+        self.assertEqual(result["content"][1]["type"], "image")
+        self.assertIn("screen settled", result["content"][0]["text"])
+
+    def test_look_without_live_view_falls_back_to_a_screenshot(self):
+        with mock.patch.object(mcp_server.target, "resolve", return_value="dev"), \
+             mock.patch.object(mcp_server.actions, "tap", return_value="tapped 1,2"), \
+             mock.patch.object(mcp_server.live, "get", return_value=None), \
+             mock.patch.object(mcp_server.time, "sleep"), \
+             mock.patch.object(mcp_server.adb, "screencap", return_value=adb.PNG_MAGIC + b"x"):
+            result = mcp_server.tool_tap({"x": 1, "y": 2, "look": True})
+        self.assertEqual(result["content"][1]["mimeType"], "image/png")
+
+    def test_wait_change_needs_live_view(self):
+        with mock.patch.object(mcp_server.target, "resolve", return_value="dev"), \
+             mock.patch.object(mcp_server.live, "get", return_value=None):
+            with self.assertRaises(adb.AdbError):
+                mcp_server.tool_wait_change({})
+
+    def test_scrcpy_can_feed_a_sink_with_no_window(self):
+        with mock.patch.object(mirror, "scrcpy_path", return_value="scrcpy"), \
+             mock.patch.object(mirror, "help_text", return_value="--no-playback --no-window"):
+            cmd = mirror.build_command("dev", window=False, sink=True,
+                                       extra=["--v4l2-sink=/dev/video2"])
+            self.assertIn("--v4l2-sink=/dev/video2", cmd)
+            with self.assertRaises(ValueError):
+                mirror.build_command("dev", window=False)
+
+
+class TestLiveV4l2Supervisor(unittest.TestCase):
+    def _view(self):
+        view = live.LiveView("dev", source="v4l2")
+        view.device = "/dev/video2"
+        view.started_at = time.monotonic()
+        return view
+
+    def test_retries_while_scrcpy_gets_going(self):
+        view = self._view()
+        results = iter([0, 0, 5])
+
+        def read(proc):
+            got = next(results)
+            if got:
+                view._stop.set()  # a real run ends when someone stops it
+            return got
+
+        with mock.patch.object(view, "_launch_ffmpeg") as launch, \
+             mock.patch.object(view, "_read_frames", side_effect=read), \
+             mock.patch.object(live.mirror, "running", return_value={"dev": 1}), \
+             mock.patch.object(live.time, "sleep"):
+            view._run_v4l2(["ffmpeg"])
+        self.assertEqual(launch.call_count, 3)
+        self.assertIsNone(view.error)
+
+    def test_closing_the_window_says_so(self):
+        view = self._view()
+        with mock.patch.object(view, "_launch_ffmpeg"), \
+             mock.patch.object(view, "_read_frames", return_value=12), \
+             mock.patch.object(live.mirror, "running", return_value={}):
+            view._run_v4l2(["ffmpeg"])
+        self.assertIn("scrcpy window was closed", view.error)
+        self.assertFalse(view.alive)
 
 
 if __name__ == "__main__":

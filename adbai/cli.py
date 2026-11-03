@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
-from . import __version__, actions, adb, apps, config, images, keys, mirror, pairing, qr, target
+from . import (__version__, actions, adb, apps, config, images, keys, live, mirror, pairing,
+               qr, target, ui)
 
 
 def _out(message: str) -> None:
@@ -212,6 +214,29 @@ def cmd_tap(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tap_text(args: argparse.Namespace) -> int:
+    _out(ui.tap_text(args.text, serial=target.resolve(args.device), index=args.index))
+    return 0
+
+
+def cmd_ui(args: argparse.Namespace) -> int:
+    items = ui.elements(target.resolve(args.device))
+    if args.clickable:
+        items = [item for item in items if item.clickable]
+    if args.json:
+        _json([item.as_dict() for item in items])
+        return 0
+    if not items:
+        _out("nothing readable on screen - a game, a video or a map? try 'adb-ai shot'")
+        return 0
+    for item in items:
+        x, y = item.center
+        label = item.label or f"({item.as_dict()['class']})"
+        mark = "  [tap]" if item.clickable else ""
+        _out(f"{x:>5},{y:<5} {label}{mark}")
+    return 0
+
+
 def cmd_swipe(args: argparse.Namespace) -> int:
     _out(actions.swipe(args.x1, args.y1, args.x2, args.y2,
                        serial=target.resolve(args.device), duration_ms=args.ms))
@@ -358,6 +383,37 @@ def cmd_mirror(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_live(args: argparse.Namespace) -> int:
+    """Run live view in the foreground: mostly for seeing that it works, and
+    how fast, before an agent depends on it."""
+    serial = target.resolve(args.device)
+    view = live.start(serial, source=args.source, window=not args.no_window,
+                      max_size=args.max_size, fps=args.fps)
+    out = Path(args.out) if args.out else None
+    _out(f"live view of {serial} via {view.source}"
+         + (f" ({view.device})" if view.device else "")
+         + " - Ctrl-C to stop")
+    seen = 0
+    began = time.monotonic()
+    try:
+        while not args.seconds or time.monotonic() - began < args.seconds:
+            frame = view.wait_change(seen, timeout=1.0)
+            if frame is None:
+                continue
+            seen = frame.seq
+            if out is not None:
+                tmp = out.with_name(out.name + ".part")
+                tmp.write_bytes(frame.data)
+                tmp.replace(out)  # whoever reads it never sees half a frame
+            width, height = frame.size()
+            _out(f"frame {frame.seq:>5}  {width}x{height}  {len(frame.data) // 1024:>4} KB")
+    except KeyboardInterrupt:
+        pass
+    finally:
+        live.stop(serial)
+    return 0
+
+
 def cmd_record(args: argparse.Namespace) -> int:
     mirror.preflight(window=False)
     serial = target.resolve(args.device)
@@ -480,6 +536,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("x", type=int)
     p.add_argument("y", type=int)
 
+    p = add("tap-text", cmd_tap_text, "tap the element showing this text (phones, tablets)")
+    p.add_argument("text")
+    p.add_argument("--index", type=int, default=0, help="which match, when several do")
+
+    p = add("ui", cmd_ui, "list what is on screen, as text, with where to tap")
+    p.add_argument("--clickable", action="store_true", help="only things you can tap")
+    p.add_argument("--json", action="store_true")
+
     p = add("swipe", cmd_swipe, "swipe between two points, or long-press")
     for name in ("x1", "y1", "x2", "y2"):
         p.add_argument(name, type=int)
@@ -557,6 +621,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-audio", action="store_true")
     p.add_argument("extra", nargs=argparse.REMAINDER,
                    help="anything after -- goes straight to scrcpy")
+
+    p = add("live", cmd_live, "stream the screen for an agent to see (needs ffmpeg)")
+    p.add_argument("--source", choices=["auto", *live.SOURCES], default="auto",
+                   help="v4l2 shares scrcpy's capture (Linux, v4l2loopback); "
+                        "screenrecord works everywhere")
+    p.add_argument("--no-window", action="store_true",
+                   help="no scrcpy window, just the frames")
+    p.add_argument("--max-size", type=int, default=images.DEFAULT_MAX_SIZE, metavar="PX")
+    p.add_argument("--fps", type=int, metavar="N", help="cap scrcpy's frame rate")
+    p.add_argument("--out", metavar="FILE", help="keep the newest frame in this .jpg")
+    p.add_argument("--seconds", type=float, metavar="N", help="stop after N seconds")
 
     p = add("record", cmd_record, "record the screen to a file, no window (needs scrcpy)")
     p.add_argument("output", nargs="?", default="screen.mp4")

@@ -78,6 +78,43 @@ scrcpy, and it does not work on Termux; if it refuses, say so and carry on with
 Prefer `adb-ai state` over a screenshot when a text answer is enough - it is
 much faster and cheaper.
 
+## Reading the screen as text, and tapping by name
+
+On a phone or tablet, `adb-ai ui` lists what is on screen - every label,
+button and icon description - with the point to tap for each. It is faster
+than a screenshot and exact, so use it to find things instead of guessing
+coordinates off a picture:
+
+```bash
+adb-ai ui --clickable         # what can be tapped, and where
+adb-ai tap-text "Save"        # tap it by its label, at its real centre
+```
+
+It is blind to games, video and maps: anything drawn straight onto the screen
+shows up as one element with nothing in it. Use `shot` for those.
+
+## Live view: watching along with the user
+
+`adb-ai live` streams the screen while you work, so you look at frames instead
+of asking for screenshots. With the v4l2loopback kernel module loaded it shares
+the capture of the scrcpy window the user is watching - you both see the same
+picture; without it, it streams the device's `screenrecord` and the user gets
+their own window. It needs ffmpeg; `adb-ai doctor` says which mode you will get.
+
+Through the MCP server it is `adb_live`, then `adb_look` for the newest frame,
+`look: true` on any action to get the screen the moment it settles, and
+`adb_wait_change` to wait for something to happen on its own. From the shell:
+
+```bash
+adb-ai live --out /tmp/screen.jpg &   # keeps the newest frame in that file
+```
+
+Frames are scaled down; the text that comes with each one says the factor to
+multiply by to turn what you see into tap coordinates.
+
+## Privacy
+
+
 Two details worth knowing:
 
 - Right after launching or switching an app, the foreground may read as
@@ -121,6 +158,16 @@ Two details worth knowing:
 
 When the target is a phone or a tablet rather than a TV or a TV box, the same
 commands reach the user's messages, bank and accounts. Treat it that way:
+
+- **Live view on a phone is a continuous screenshot.** Everything that crosses
+  the screen while it runs - a notification, a chat, a code - reaches you.
+  Start it only when the user asks for it or agrees, say that it is on, and
+  stop it (`adb_live` with `action: stop`) as soon as the task is done. Every
+  rule below about screenshots applies to every frame of it.
+- **`adb-ai ui` reads a screen's text the way a screenshot shows it.** On a
+  chat list or an inbox, that text *is* the user's private content. The same
+  rules apply: use it on screens you created or the user pointed you at, not
+  to read through their apps.
 
 - **Ask first** before opening anything personal - messaging, email, banking,
   photos, settings - even when the user's request implies it loosely.
