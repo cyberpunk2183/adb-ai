@@ -158,9 +158,14 @@ def build_command(
     audio: bool = True,
     time_limit: int | None = None,
     title: str | None = None,
+    sink: bool = False,
     extra: Sequence[str] = (),
 ) -> list[str]:
-    """Assemble the scrcpy command line for the options we expose."""
+    """Assemble the scrcpy command line for the options we expose.
+
+    ``sink`` says the video goes somewhere ``extra`` names - a v4l2 device,
+    for live view - so no window and no recording is still something to do.
+    """
     cmd = [scrcpy_path()]
     if serial:
         cmd += ["-s", serial]
@@ -169,7 +174,7 @@ def build_command(
     if record:
         cmd.append(f"--record={record}")
     if not window:
-        if not record:
+        if not record and not sink:
             raise ValueError("there is nothing to do with no window and no recording")
         cmd += _no_playback_flags()
     if max_size:

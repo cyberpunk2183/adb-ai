@@ -15,10 +15,11 @@ import json
 import os
 import sys
 import threading
+import time
 import traceback
 from typing import Any, Callable
 
-from . import __version__, actions, adb, apps, images, keys, mirror, pairing, qr, target
+from . import __version__, actions, adb, apps, images, keys, live, mirror, pairing, qr, target, ui
 
 PROTOCOL_VERSION = "2024-11-05"
 
@@ -115,33 +116,87 @@ def tool_pair_qr_finish(args: dict[str, Any]) -> dict[str, Any]:
     return _data(result)
 
 
+# Without live view there is no stream to watch settle, so "look" waits this
+# long and takes a screenshot instead.
+LOOK_DELAY = 0.6
+
+
+def _image(data: bytes, mime: str) -> dict[str, Any]:
+    return {"type": "image", "data": base64.b64encode(data).decode("ascii"), "mimeType": mime}
+
+
+def _frame_content(view: live.LiveView, frame: live.Frame, note: str) -> list[dict[str, Any]]:
+    return [{"type": "text", "text": f"{note}\n{view.describe(frame)}"},
+            _image(frame.data, "image/jpeg")]
+
+
+def _screenshot_content(serial: str, args: dict[str, Any], note: str) -> list[dict[str, Any]]:
+    data, mime = images.shrink(adb.screencap(serial), max_size=_shot_max_size(args))
+    return [{"type": "text", "text": note}, _image(data, mime)]
+
+
+def _acting(args: dict[str, Any], act: Callable[[str], str]) -> dict[str, Any]:
+    """Do something to the device, and with ``look`` show what it did.
+
+    With live view running, "what it did" is the first frame after the screen
+    stops moving - no fixed sleep, no second call. Without it, a screenshot a
+    moment later.
+    """
+    serial = _device(args)
+    if not args.get("look"):
+        return _text(act(serial))
+    view = live.get(serial)
+    before = view.seq() if view else 0
+    message = act(serial)
+    if view is not None:
+        frame, how = view.wait_settled(before)
+        return {"content": _frame_content(view, frame, f"{message} - screen {how}")}
+    time.sleep(LOOK_DELAY)
+    return {"content": _screenshot_content(
+        serial, args, f"{message} - screenshot {LOOK_DELAY:g}s later "
+                      "(adb_live would show it the moment it settles)")}
+
+
 def tool_key(args: dict[str, Any]) -> dict[str, Any]:
-    pressed = actions.press_sequence(
-        args["keys"], serial=_device(args), repeat=int(args.get("repeat", 1)),
+    return _acting(args, lambda serial: "pressed " + ", ".join(actions.press_sequence(
+        args["keys"], serial=serial, repeat=int(args.get("repeat", 1)),
         pace_ms=int(args.get("pace_ms", 0)),
-    )
-    return _text("pressed " + ", ".join(pressed))
+    )))
 
 
 def tool_text(args: dict[str, Any]) -> dict[str, Any]:
-    actions.type_text(args["text"], serial=_device(args))
-    return _text("typed")
+    def act(serial: str) -> str:
+        actions.type_text(args["text"], serial=serial)
+        return "typed"
+    return _acting(args, act)
 
 
 def tool_tap(args: dict[str, Any]) -> dict[str, Any]:
-    return _text(actions.tap(args["x"], args["y"], serial=_device(args)))
+    return _acting(args, lambda serial: actions.tap(args["x"], args["y"], serial=serial))
+
+
+def tool_tap_text(args: dict[str, Any]) -> dict[str, Any]:
+    return _acting(args, lambda serial: ui.tap_text(
+        args["text"], serial=serial, index=int(args.get("index", 0))))
 
 
 def tool_swipe(args: dict[str, Any]) -> dict[str, Any]:
-    return _text(actions.swipe(
+    return _acting(args, lambda serial: actions.swipe(
         args["x1"], args["y1"], args["x2"], args["y2"],
-        serial=_device(args), duration_ms=int(args.get("duration_ms", 300)),
+        serial=serial, duration_ms=int(args.get("duration_ms", 300)),
     ))
 
 
 def tool_scroll(args: dict[str, Any]) -> dict[str, Any]:
-    return _text(actions.scroll(args["direction"], serial=_device(args),
-                                amount=float(args.get("amount", 0.6))))
+    return _acting(args, lambda serial: actions.scroll(
+        args["direction"], serial=serial, amount=float(args.get("amount", 0.6))))
+
+
+def tool_ui(args: dict[str, Any]) -> dict[str, Any]:
+    items = ui.elements(_device(args))
+    if args.get("clickable_only"):
+        items = [item for item in items if item.clickable]
+    return _data([item.as_dict() for item in items])
 
 
 def tool_screen_size(args: dict[str, Any]) -> dict[str, Any]:
@@ -154,7 +209,7 @@ def tool_apps(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def tool_open_app(args: dict[str, Any]) -> dict[str, Any]:
-    return _text("launched " + actions.open_app(args["app"], serial=_device(args)))
+    return _acting(args, lambda serial: "launched " + actions.open_app(args["app"], serial=serial))
 
 
 def tool_close_app(args: dict[str, Any]) -> dict[str, Any]:
@@ -263,6 +318,61 @@ def tool_mirror(args: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def tool_live(args: dict[str, Any]) -> dict[str, Any]:
+    action = str(args.get("action") or "start").lower()
+    if action == "status":
+        views = list(live.running())
+        if not views:
+            return _text("live view is off. action='start' turns it on.")
+        return _data([view.status() for view in views])
+
+    serial = _device(args)
+    if action == "stop":
+        return _text("live view stopped" if live.stop(serial) else "live view was not running")
+    if action != "start":
+        raise ValueError(f"unknown action {action!r}: use start, stop or status")
+
+    options: dict[str, Any] = {"source": args.get("source") or "auto",
+                               "window": args.get("window", True)}
+    if args.get("max_size") is not None:
+        options["max_size"] = int(args["max_size"])
+    view = live.start(serial, **options)
+    frame = view.latest(timeout=10.0)
+    who = ("the person's scrcpy window and you are looking at the same capture"
+           if view.source == "v4l2" else
+           "frames come from the device's screenrecord"
+           + ("; the person has a scrcpy window of their own" if view.status()["window"] else ""))
+    return {"content": _frame_content(view, frame, (
+        f"live view on via {view.source} - {who}. adb_look shows the newest frame "
+        "at once; look=true on an action shows the screen once it settles; "
+        "adb_wait_change waits for the screen to change by itself."))}
+
+
+def tool_look(args: dict[str, Any]) -> dict[str, Any]:
+    serial = _device(args)
+    view = live.get(serial)
+    if view is None:
+        return {"content": _screenshot_content(
+            serial, args, "live view is off, so this is a fresh screenshot - "
+                          "adb_live makes looking instant")}
+    frame = view.latest()
+    return {"content": _frame_content(view, frame, "live")}
+
+
+def tool_wait_change(args: dict[str, Any]) -> dict[str, Any]:
+    serial = _device(args)
+    view = live.get(serial)
+    if view is None:
+        raise adb.AdbError("adb_wait_change needs live view - start it with adb_live")
+    timeout = float(args.get("timeout_seconds") or 10)
+    before = view.seq()
+    if view.wait_change(before, timeout) is None:
+        frame = view.latest()
+        return {"content": _frame_content(view, frame, f"no change in {timeout:g}s")}
+    frame, how = view.wait_settled(before, change=0)
+    return {"content": _frame_content(view, frame, f"the screen changed - {how}")}
+
+
 def tool_shell(args: dict[str, Any]) -> dict[str, Any]:
     if not _shell_enabled():
         return _text(
@@ -278,6 +388,15 @@ _DEVICE_PROP = {
     "device": {
         "type": "string",
         "description": "serial, ip[:port] or saved alias; omit to use the default device",
+    }
+}
+
+
+_LOOK_PROP = {
+    "look": {
+        "type": "boolean",
+        "description": "also return the screen after the action - with adb_live on, "
+                       "the moment it stops changing; otherwise a screenshot",
     }
 }
 
@@ -345,25 +464,54 @@ TOOLS: list[dict[str, Any]] = [
                         "description": "all the keys go in one call by default; set "
                                        "this (e.g. 120) if a menu drops keys that "
                                        "arrive back to back"},
+            **_LOOK_PROP,
         }, ["keys"]),
         "handler": tool_key,
     },
     {
         "name": "adb_type_text",
         "description": "Type text into the field that currently has focus.",
-        "inputSchema": _schema({"text": {"type": "string"}}, ["text"]),
+        "inputSchema": _schema({"text": {"type": "string"}, **_LOOK_PROP}, ["text"]),
         "handler": tool_text,
     },
     {
         "name": "adb_tap",
-        "description": "Tap a point on the screen. For phones and tablets - a TV is "
-                       "driven with adb_key instead. Take a screenshot first to find "
-                       "the coordinates, and adb_screen_size to know the bounds.",
+        "description": "Tap a point on the screen, in screen pixels. For phones and "
+                       "tablets - a TV is driven with adb_key instead. When the target "
+                       "has text, adb_tap_text is faster and exact; otherwise find the "
+                       "point with adb_look or adb_screenshot.",
         "inputSchema": _schema({
             "x": {"type": "integer"},
             "y": {"type": "integer"},
+            **_LOOK_PROP,
         }, ["x", "y"]),
         "handler": tool_tap,
+    },
+    {
+        "name": "adb_tap_text",
+        "description": "Tap the on-screen element whose text or description matches - "
+                       "a button, a menu item, a link - at its real centre, read from "
+                       "the layout. No screenshot and no coordinates needed. Exact "
+                       "matches win over partial ones; the error lists what is on "
+                       "screen when nothing matches.",
+        "inputSchema": _schema({
+            "text": {"type": "string", "description": "e.g. 'Save', 'Wi-Fi'"},
+            "index": {"type": "integer",
+                      "description": "which match, when several do; default 0 (best)"},
+            **_LOOK_PROP,
+        }, ["text"]),
+        "handler": tool_tap_text,
+    },
+    {
+        "name": "adb_ui",
+        "description": "Read the screen as text: every element with text, a "
+                       "description or a click handler, with its centre in screen "
+                       "pixels. Faster than a screenshot for finding what to tap, and "
+                       "exact. Blind to games, video and maps - use adb_look for those.",
+        "inputSchema": _schema({
+            "clickable_only": {"type": "boolean"},
+        }),
+        "handler": tool_ui,
     },
     {
         "name": "adb_swipe",
@@ -373,6 +521,7 @@ TOOLS: list[dict[str, Any]] = [
             "x1": {"type": "integer"}, "y1": {"type": "integer"},
             "x2": {"type": "integer"}, "y2": {"type": "integer"},
             "duration_ms": {"type": "integer", "description": "default 300"},
+            **_LOOK_PROP,
         }, ["x1", "y1", "x2", "y2"]),
         "handler": tool_swipe,
     },
@@ -384,6 +533,7 @@ TOOLS: list[dict[str, Any]] = [
             "direction": {"type": "string", "enum": ["up", "down", "left", "right"]},
             "amount": {"type": "number",
                        "description": "fraction of the screen to travel, 0.1-0.9"},
+            **_LOOK_PROP,
         }, ["direction"]),
         "handler": tool_scroll,
     },
@@ -404,7 +554,7 @@ TOOLS: list[dict[str, Any]] = [
         "name": "adb_open_app",
         "description": "Launch an app by friendly alias (netflix, youtube, spotify...), "
                        "full package name, or a fragment of one.",
-        "inputSchema": _schema({"app": {"type": "string"}}, ["app"]),
+        "inputSchema": _schema({"app": {"type": "string"}, **_LOOK_PROP}, ["app"]),
         "handler": tool_open_app,
     },
     {
@@ -488,9 +638,10 @@ TOOLS: list[dict[str, Any]] = [
         "description": "Open a live window of the device's screen on the operator's "
                        "computer, using scrcpy, so a human can watch what you are "
                        "doing and take over with mouse and keyboard. It is for them, "
-                       "not for you: you cannot see the window, so keep using "
-                       "adb_screenshot to look at the screen. Needs scrcpy installed "
-                       "and a desktop session; it does not work from Termux.",
+                       "not for you: you cannot see the window. To watch along with "
+                       "them, use adb_live instead - it opens the same window and "
+                       "lets you see it too. Needs scrcpy installed and a desktop "
+                       "session; it does not work from Termux.",
         "inputSchema": _schema({
             "action": {"type": "string", "enum": ["start", "stop", "status"],
                        "description": "default start"},
@@ -505,6 +656,48 @@ TOOLS: list[dict[str, Any]] = [
                                         "on a slow network"},
         }),
         "handler": tool_mirror,
+    },
+    {
+        "name": "adb_live",
+        "description": "Stream the device's screen to this computer so you can see it "
+                       "without waiting for screenshots: adb_look then returns the "
+                       "newest frame at once, look=true on an action returns the "
+                       "screen the moment it settles, and adb_wait_change waits for "
+                       "it to change by itself. With source v4l2 (Linux, "
+                       "v4l2loopback) the person's scrcpy window and you share one "
+                       "capture; screenrecord works everywhere. Needs ffmpeg. Frames "
+                       "are scaled down: the text with each one says how to turn what "
+                       "you see into tap coordinates. On a phone this is a continuous "
+                       "screenshot of everything that crosses the screen: start it "
+                       "only when the person asks or agrees, and stop it when done.",
+        "inputSchema": _schema({
+            "action": {"type": "string", "enum": ["start", "stop", "status"],
+                       "description": "default start"},
+            "source": {"type": "string", "enum": ["auto", "v4l2", "screenrecord"],
+                       "description": "where the video comes from; auto prefers v4l2"},
+            "window": {"type": "boolean",
+                       "description": "open a scrcpy window for the person, default true"},
+            "max_size": {"type": "integer",
+                         "description": "longest side of the frames you get, default 1280"},
+        }),
+        "handler": tool_live,
+    },
+    {
+        "name": "adb_look",
+        "description": "See the screen now. With adb_live running this is the newest "
+                       "frame, instantly; without it, a fresh screenshot.",
+        "inputSchema": _schema({}),
+        "handler": tool_look,
+    },
+    {
+        "name": "adb_wait_change",
+        "description": "Wait until the screen changes on its own - a page loading, a "
+                       "video starting, a dialog appearing - then return it once it "
+                       "settles. Needs adb_live.",
+        "inputSchema": _schema({
+            "timeout_seconds": {"type": "number", "description": "default 10"},
+        }),
+        "handler": tool_wait_change,
     },
     {
         "name": "adb_shell",
@@ -590,6 +783,14 @@ def serve(stdin=None, stdout=None) -> None:
     """Read line-delimited JSON-RPC from stdin, write replies to stdout."""
     source = stdin or sys.stdin
     sink = stdout or sys.stdout
+    try:
+        _serve(source, sink)
+    finally:
+        # The client went away: leave no ffmpeg, screenrecord or window behind.
+        live.stop_all()
+
+
+def _serve(source, sink) -> None:
     for line in source:
         line = line.strip()
         if not line:
