@@ -13,6 +13,7 @@ screenshots and live view are still for.
 from __future__ import annotations
 
 import re
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
@@ -139,15 +140,41 @@ def find(items: list[Element], query: str) -> list[Element]:
             score = 1
         elif rid.endswith("/" + want):
             score = 2
-        elif want in text:
+        # A part of a label only counts for a query long enough to mean
+        # something: "=" is inside "= 517,582" and "×" inside "2×19", but a
+        # calculator's = and × buttons are what was meant.
+        elif len(want) >= 2 and want in text:
             score = 3
-        elif want in desc:
+        elif len(want) >= 2 and want in desc:
             score = 4
         else:
             continue
         ranked.append((score * 2 + (0 if item.clickable else 1), position, item))
     ranked.sort(key=lambda entry: entry[:2])
     return [item for _, _, item in ranked]
+
+
+def tap_texts(queries: list[str], serial: str | None = None, pause: float = 0.15) -> str:
+    """Tap several labels in order, reading the layout once.
+
+    Reading it is the slow part - seconds on some phones - and a keypad or a
+    form keeps its buttons where they are while you press them. Every label
+    is found before any is tapped, so a missing one changes nothing.
+    """
+    items = elements(serial)
+    chosen = []
+    for query in queries:
+        matches = find(items, query)
+        if not matches:
+            labels = [item.label for item in items if item.label][:25]
+            listing = ", ".join(repr(label) for label in labels) or "no text on screen"
+            raise LookupError(f"nothing on screen matches {query!r}. On screen: {listing}")
+        chosen.append(matches[0])
+    for position, item in enumerate(chosen):
+        if position:
+            time.sleep(pause)
+        actions.tap(*item.center, serial=serial)
+    return "tapped " + ", ".join(repr(item.label) for item in chosen)
 
 
 def tap_text(query: str, serial: str | None = None, index: int = 0) -> str:

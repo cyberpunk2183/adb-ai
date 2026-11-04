@@ -62,6 +62,8 @@ From an agent, over MCP:
   `adb_scroll`, `adb_type_text` or `adb_open_app` - do it, then return the
   screen once it settles
 - `adb_wait_change` - wait for the screen to change by itself
+- `adb_steps` - several actions in one call, waiting for the screen between
+  them, and one look at the end
 
 From the terminal, to see it working and how fast:
 
