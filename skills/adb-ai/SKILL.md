@@ -93,6 +93,27 @@ adb-ai tap-text "Save"        # tap it by its label, at its real centre
 It is blind to games, video and maps: anything drawn straight onto the screen
 shows up as one element with nothing in it. Use `shot` for those.
 
+Reading the layout takes a few seconds on some phones, so tap several labels
+on the same screen from one read: over MCP, `adb_steps` with
+`{do: "tap_text", text: ["7", "multiplicação", "6", "igual"]}`. Buttons drawn
+as symbols are usually labelled only by their description - the list above
+shows it.
+
+## Several actions in one call
+
+Over MCP, when you already know the next few actions, send them together with
+`adb_steps` instead of one call each: open an app, tap a field, type, press
+enter, and get the screen once at the end. It waits for the screen between
+steps, stops at the first one that fails and says which. Each call you save is
+a round of your own thinking, which is far slower than the device.
+
+```json
+{"steps": [{"do": "open_app", "app": "youtube"},
+           {"do": "tap_text", "text": "Search"},
+           {"do": "text", "text": "eminem"},
+           {"do": "key", "keys": ["enter"]}]}
+```
+
 ## Live view: watching along with the user
 
 `adb-ai live` streams the screen while you work, so you look at frames instead

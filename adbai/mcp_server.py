@@ -192,6 +192,128 @@ def tool_scroll(args: dict[str, Any]) -> dict[str, Any]:
         args["direction"], serial=serial, amount=float(args.get("amount", 0.6))))
 
 
+# --- several actions in one call --------------------------------------------
+
+MAX_STEPS = 50
+# Between steps, how long a step gets to show any change before the next one
+# goes ahead anyway. Shorter than CHANGE_SECONDS: inside a sequence most steps
+# visibly do something at once, and the ones that do not (a key on a focused
+# field) should not cost a second and a half each.
+STEP_CHANGE_SECONDS = 0.6
+# Without live view there is nothing to watch, so steps are just spaced out.
+STEP_PAUSE = 0.4
+# tap_text inside a sequence: if the label is not there yet, give the screen
+# this long to change, once.
+CHANGE_RETRY_SECONDS = 1.5
+
+
+def _step_action(step: dict[str, Any]) -> Callable[[str], str]:
+    """What one step does, as the same calls the single-action tools make."""
+    kind = str(step.get("do") or "").lower()
+    if kind == "key":
+        keys = step.get("keys") or ([step["key"]] if step.get("key") else None)
+        if not keys:
+            raise ValueError("a key step needs 'keys' (a list) or 'key'")
+        return lambda serial: "pressed " + ", ".join(actions.press_sequence(
+            list(keys), serial=serial, repeat=int(step.get("repeat", 1))))
+    if kind == "text":
+        def typed(serial: str) -> str:
+            actions.type_text(str(step["text"]), serial=serial)
+            return f"typed {step['text']!r}"
+        return typed
+    if kind == "tap":
+        return lambda serial: actions.tap(int(step["x"]), int(step["y"]), serial=serial)
+    if kind == "tap_text":
+        if isinstance(step.get("text"), list):
+            labels = [str(label) for label in step["text"]]
+            return lambda serial: ui.tap_texts(labels, serial=serial)
+        return lambda serial: ui.tap_text(str(step["text"]), serial=serial,
+                                          index=int(step.get("index", 0)))
+    if kind == "swipe":
+        return lambda serial: actions.swipe(
+            int(step["x1"]), int(step["y1"]), int(step["x2"]), int(step["y2"]),
+            serial=serial, duration_ms=int(step.get("duration_ms", 300)))
+    if kind == "scroll":
+        return lambda serial: actions.scroll(str(step["direction"]), serial=serial,
+                                             amount=float(step.get("amount", 0.6)))
+    if kind == "open_app":
+        return lambda serial: "launched " + actions.open_app(str(step["app"]), serial=serial)
+    if kind == "wait":
+        seconds = min(float(step.get("seconds", 1)), 30.0)
+
+        def waited(serial: str) -> str:
+            time.sleep(seconds)
+            return f"waited {seconds:g}s"
+        return waited
+    raise ValueError(f"unknown step {kind!r}: use key, text, tap, tap_text, swipe, "
+                     "scroll, open_app or wait")
+
+
+def _settle_between(view: live.LiveView | None, before: int) -> None:
+    if view is not None:
+        view.wait_settled(before, change=STEP_CHANGE_SECONDS)
+    else:
+        time.sleep(STEP_PAUSE)
+
+
+def tool_steps(args: dict[str, Any]) -> dict[str, Any]:
+    """Run a list of actions, waiting for the screen between them, and look once."""
+    steps = args.get("steps") or []
+    if not isinstance(steps, list) or not steps:
+        raise ValueError("steps must be a non-empty list")
+    if len(steps) > MAX_STEPS:
+        raise ValueError(f"at most {MAX_STEPS} steps in one call, got {len(steps)}")
+    # Check every step before doing any, so a typo in step 5 does not leave the
+    # device after step 4.
+    plan = [(i, step, _step_action(step)) for i, step in enumerate(steps, 1)]
+
+    serial = _device(args)
+    view = live.get(serial)
+    look = args.get("look", True)
+    done: list[str] = []
+    failed: str | None = None
+    before = view.seq() if view else 0
+    for i, step, act in plan:
+        before = view.seq() if view else 0
+        try:
+            try:
+                done.append(f"{i}. {act(serial)}")
+            except LookupError:
+                if step.get("do") != "tap_text":
+                    raise
+                # The screen the previous step opened may still be coming in.
+                if view is not None:
+                    view.wait_change(before, CHANGE_RETRY_SECONDS)
+                    view.wait_settled(view.seq())
+                else:
+                    time.sleep(CHANGE_RETRY_SECONDS)
+                before = view.seq() if view else 0
+                done.append(f"{i}. {act(serial)}")
+        except (adb.AdbError, LookupError, ValueError, KeyError) as exc:
+            failed = f"step {i} ({step.get('do')}) failed: {exc}"
+            break
+        if i < len(plan) and step.get("settle", True):
+            _settle_between(view, before)
+
+    summary = "\n".join(done)
+    if failed:
+        rest = len(plan) - len(done) - 1
+        summary = (summary + "\n" if summary else "") + failed + \
+            (f"\n{rest} step(s) not run" if rest else "")
+    if not look:
+        if failed:
+            raise adb.AdbError(summary)
+        return _text(summary)
+    if view is not None:
+        frame, how = view.wait_settled(before)
+        return {"content": _frame_content(view, frame, f"{summary}\nscreen {how}"),
+                **({"isError": True} if failed else {})}
+    time.sleep(LOOK_DELAY)
+    return {"content": _screenshot_content(serial, args, f"{summary}\nscreenshot "
+                                                         f"{LOOK_DELAY:g}s later"),
+            **({"isError": True} if failed else {})}
+
+
 def tool_ui(args: dict[str, Any]) -> dict[str, Any]:
     items = ui.elements(_device(args))
     if args.get("clickable_only"):
@@ -714,6 +836,65 @@ TOOLS: list[dict[str, Any]] = [
             "timeout_seconds": {"type": "number", "description": "default 10"},
         }),
         "handler": tool_wait_change,
+    },
+    {
+        "name": "adb_steps",
+        "description": "Do several actions in one call - tap a field, type, press "
+                       "enter, and see the result - instead of one call each. Between "
+                       "steps it waits for the screen to settle (instantly noticed "
+                       "with adb_live on), stops at the first step that fails and "
+                       "says which, and returns the screen once at the end. Use it "
+                       "whenever you already know the next few actions: every call "
+                       "you save is a round trip of your own thinking. Each step is "
+                       "an object with 'do' and that action's arguments: "
+                       "{do: 'tap_text', text}, {do: 'tap', x, y}, {do: 'text', text}, "
+                       "{do: 'tap_text', text: ['7', 'multiplicação', '6', 'igual']} "
+                       "taps several labels on one screen from a single read of its "
+                       "layout - much faster, as each read takes seconds on some "
+                       "phones. Buttons drawn as symbols are often labelled only by "
+                       "their description; adb_ui lists them. "
+                       "{do: 'key', keys: [...]}, {do: 'swipe', x1, y1, x2, y2}, "
+                       "{do: 'scroll', direction}, {do: 'open_app', app}, "
+                       "{do: 'wait', seconds}. 'settle': false on a step skips the "
+                       "wait after it.",
+        "inputSchema": _schema({
+            "steps": {
+                "type": "array",
+                "maxItems": MAX_STEPS,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "do": {"type": "string",
+                               "enum": ["key", "text", "tap", "tap_text", "swipe",
+                                        "scroll", "open_app", "wait"]},
+                        "keys": {"type": "array", "items": {"type": "string"}},
+                        "key": {"type": "string"},
+                        "repeat": {"type": "integer"},
+                        "text": {"anyOf": [{"type": "string"},
+                                           {"type": "array", "items": {"type": "string"}}],
+                                 "description": "for tap_text, a list taps each label "
+                                                "in turn from one read of the screen"},
+                        "index": {"type": "integer"},
+                        "x": {"type": "integer"}, "y": {"type": "integer"},
+                        "x1": {"type": "integer"}, "y1": {"type": "integer"},
+                        "x2": {"type": "integer"}, "y2": {"type": "integer"},
+                        "duration_ms": {"type": "integer"},
+                        "direction": {"type": "string",
+                                      "enum": ["up", "down", "left", "right"]},
+                        "amount": {"type": "number"},
+                        "app": {"type": "string"},
+                        "seconds": {"type": "number"},
+                        "settle": {"type": "boolean",
+                                   "description": "default true: wait for the screen "
+                                                  "before the next step"},
+                    },
+                    "required": ["do"],
+                },
+            },
+            "look": {"type": "boolean",
+                     "description": "default true: return the screen after the last step"},
+        }, ["steps"]),
+        "handler": tool_steps,
     },
     {
         "name": "adb_shell",

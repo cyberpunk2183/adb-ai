@@ -1289,3 +1289,130 @@ class TestKeptShell(unittest.TestCase):
         with mock.patch.object(actions.adb, "shell", return_value="ok") as plain:
             self.assertEqual(actions._shell("echo x", None), "ok")
         plain.assert_called_once()
+
+
+class TestSteps(unittest.TestCase):
+    """adb_steps: several actions, one call, one look."""
+
+    def setUp(self):
+        mock.patch.object(mcp_server, "_device", return_value="phone").start()
+        mock.patch.object(mcp_server.live, "get", return_value=None).start()
+        mock.patch.object(mcp_server.time, "sleep").start()
+        self.calls = []
+        mock.patch.object(mcp_server.actions, "tap",
+                          side_effect=lambda x, y, serial=None: self.calls.append(("tap", x, y))
+                          or f"tapped {x},{y}").start()
+        mock.patch.object(mcp_server.actions, "type_text",
+                          side_effect=lambda text, serial=None: self.calls.append(("text", text))
+                          ).start()
+        mock.patch.object(mcp_server.actions, "press_sequence",
+                          side_effect=lambda keys, serial=None, repeat=1:
+                          self.calls.append(("key", tuple(keys))) or ["KEYCODE_ENTER"]).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def test_runs_every_step_in_order(self):
+        result = mcp_server.tool_steps({"look": False, "steps": [
+            {"do": "tap", "x": 10, "y": 20},
+            {"do": "text", "text": "eminem"},
+            {"do": "key", "keys": ["enter"]},
+        ]})
+        self.assertEqual(self.calls, [("tap", 10, 20), ("text", "eminem"), ("key", ("enter",))])
+        text = result["content"][0]["text"]
+        self.assertIn("1. tapped 10,20", text)
+        self.assertIn("3. pressed KEYCODE_ENTER", text)
+
+    def test_a_bad_step_is_caught_before_anything_runs(self):
+        with self.assertRaises(ValueError):
+            mcp_server.tool_steps({"steps": [{"do": "tap", "x": 1, "y": 2},
+                                             {"do": "fly"}]})
+        self.assertEqual(self.calls, [])
+
+    def test_it_stops_at_the_first_failure_and_says_where(self):
+        mcp_server.actions.type_text.side_effect = adb.AdbError("device offline")
+        with self.assertRaises(adb.AdbError) as caught:
+            mcp_server.tool_steps({"look": False, "steps": [
+                {"do": "tap", "x": 1, "y": 2},
+                {"do": "text", "text": "x"},
+                {"do": "key", "keys": ["enter"]},
+            ]})
+        message = str(caught.exception)
+        self.assertIn("step 2 (text) failed: device offline", message)
+        self.assertIn("1 step(s) not run", message)
+        self.assertNotIn(("key", ("enter",)), self.calls)
+
+    def test_a_failure_still_shows_the_screen_when_looking(self):
+        mcp_server.actions.type_text.side_effect = adb.AdbError("nope")
+        with mock.patch.object(mcp_server, "_screenshot_content",
+                               return_value=[{"type": "text", "text": "shot"}]):
+            result = mcp_server.tool_steps({"steps": [{"do": "text", "text": "x"}]})
+        self.assertTrue(result["isError"])
+
+    def test_tap_text_waits_once_for_a_label_that_is_still_coming(self):
+        found = iter([LookupError("nothing on screen matches 'OK'"), "tapped 'OK' at 5,5"])
+
+        def tap_text(text, serial=None, index=0):
+            item = next(found)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        with mock.patch.object(mcp_server.ui, "tap_text", side_effect=tap_text):
+            result = mcp_server.tool_steps({"look": False,
+                                            "steps": [{"do": "tap_text", "text": "OK"}]})
+        self.assertIn("tapped 'OK'", result["content"][0]["text"])
+
+    def test_with_live_view_it_waits_for_the_screen_between_steps_not_after_the_last(self):
+        view = mock.Mock()
+        view.seq.return_value = 0
+        frame = live.Frame(1, time.monotonic(), b"jpeg")
+        view.wait_settled.return_value = (frame, "settled")
+        view.describe.return_value = "frame 1"
+        mcp_server.live.get.return_value = view
+        result = mcp_server.tool_steps({"steps": [{"do": "tap", "x": 1, "y": 1},
+                                                  {"do": "tap", "x": 2, "y": 2,
+                                                   "settle": False},
+                                                  {"do": "tap", "x": 3, "y": 3}]})
+        # one wait after step 1 (step 2 opted out), one for the final look
+        changes = [c.kwargs.get("change") for c in view.wait_settled.call_args_list]
+        self.assertEqual(changes, [mcp_server.STEP_CHANGE_SECONDS, None])
+        self.assertEqual(result["content"][1]["mimeType"], "image/jpeg")
+
+    def test_too_many_steps_are_refused(self):
+        with self.assertRaises(ValueError):
+            mcp_server.tool_steps({"steps": [{"do": "wait"}] * (mcp_server.MAX_STEPS + 1)})
+
+
+class TestTapLabels(unittest.TestCase):
+    def test_a_symbol_is_not_found_inside_another_label(self):
+        items = ui.parse(CALC_XML)
+        self.assertEqual(ui.find(items, "="), [])
+        self.assertEqual([i.label for i in ui.find(items, "multiplicação")], ["multiplicação"])
+
+    def test_longer_queries_still_match_part_of_a_label(self):
+        items = ui.parse(CALC_XML)
+        self.assertTrue(ui.find(items, "517"))
+
+    def test_several_labels_are_tapped_from_one_read(self):
+        with mock.patch.object(ui, "dump_xml", return_value=CALC_XML) as dump, \
+             mock.patch.object(ui.actions, "tap") as tap, \
+             mock.patch.object(ui.time, "sleep"):
+            out = ui.tap_texts(["7", "multiplicação", "6"], serial="p")
+        dump.assert_called_once()
+        self.assertEqual([c.args for c in tap.call_args_list], [(50, 50), (150, 50), (50, 150)])
+        self.assertIn("'multiplicação'", out)
+
+    def test_a_missing_label_taps_nothing(self):
+        with mock.patch.object(ui, "dump_xml", return_value=CALC_XML), \
+             mock.patch.object(ui.actions, "tap") as tap:
+            with self.assertRaises(LookupError) as caught:
+                ui.tap_texts(["7", "×"], serial="p")
+        tap.assert_not_called()
+        self.assertIn("multiplicação", str(caught.exception))  # says what is there
+
+
+CALC_XML = """<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0">
+<node index="0" text="= 517,582" resource-id="calc:id/result" class="android.widget.TextView" content-desc="" clickable="false" bounds="[0,0][300,40]" />
+<node index="1" text="7" resource-id="calc:id/digit_7" class="android.widget.TextView" content-desc="" clickable="true" bounds="[0,0][100,100]" />
+<node index="2" text="" resource-id="calc:id/op_mul" class="android.widget.ImageView" content-desc="multiplicação" clickable="true" bounds="[100,0][200,100]" />
+<node index="3" text="6" resource-id="calc:id/digit_6" class="android.widget.TextView" content-desc="" clickable="true" bounds="[0,100][100,200]" />
+</hierarchy>"""
