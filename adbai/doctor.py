@@ -123,21 +123,21 @@ def run() -> int:
     # live view (optional: an agent watching the screen as it changes) ----
     if not images.available():
         report.append(_line(None, "live view needs ffmpeg", "see the ffmpeg line above"))
-    elif system == "Linux":
+    else:
         loopbacks = live.loopback_devices()
-        if loopbacks:
+        scrcpy_ok = live.scrcpy_problem() is None
+        if scrcpy_ok and loopbacks:
             report.append(_line(True, "live view ready - v4l2loopback at "
                                       + ", ".join(loopbacks),
                                 "you and the agent share one scrcpy capture"))
+        elif scrcpy_ok:
+            report.append(_line(True, "live view ready, through scrcpy",
+                                "scrcpy records into a pipe that ffmpeg reads"))
         else:
             report.append(_line(None, "live view works, through screenrecord",
-                                "load v4l2loopback to share the scrcpy window's own "
-                                "capture instead:\n       " +
-                                live.LOOPBACK_HELP.split("\n", 1)[1].replace(
-                                    "\n", "\n       ")))
-    else:
-        report.append(_line(True, "live view ready, through screenrecord"))
-
+                                "the last frame after an action comes from a "
+                                "screencap, a second or two slower; with scrcpy "
+                                "on Linux or macOS it is instant"))
     if shutil.which("adb") is None and not failed:
         report.append(_line(None, "adb is not on your PATH",
                             "found through ADBAI_ADB or a known location - fine, "

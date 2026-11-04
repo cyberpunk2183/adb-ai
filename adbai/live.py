@@ -12,7 +12,7 @@ that look like the one before, so a frame only reaches us when the screen
 actually changed - "has it settled?" is just "has nothing arrived for a
 moment?".
 
-Two places the video can come from:
+Three places the video can come from, best first:
 
 ``v4l2``
     scrcpy draws its window as usual and also feeds a v4l2loopback device,
@@ -20,10 +20,19 @@ Two places the video can come from:
     window, the agent reads the frames, and it is the same picture. Linux
     only, and the v4l2loopback kernel module has to be loaded.
 
+``scrcpy``
+    scrcpy records into a named pipe that ffmpeg reads - with its window, the
+    same one capture for both, without the kernel module; without a window,
+    just the frames. Needs scrcpy and a POSIX named pipe: Linux and macOS.
+
 ``screenrecord``
     ffmpeg reads H.264 straight from the device's own ``screenrecord``. Works
-    wherever adb does; a scrcpy window for the person, if wanted, is a second
-    capture next to it.
+    wherever adb does, Windows and Termux included. But the device's encoder
+    holds on to the last frame until another one comes, so the picture of a
+    screen that just stopped moving would be the one before it. scrcpy asks
+    the encoder to repeat that frame; screenrecord cannot. So once the screen
+    is quiet, a screencap replaces the held frame - always right, about a
+    second and a half slower to answer after an action.
 
 ffmpeg is required here, unlike everywhere else in adb-ai: this is the one
 feature that is nothing without it.
@@ -31,10 +40,13 @@ feature that is nothing without it.
 
 from __future__ import annotations
 
+import atexit
 import os
 import queue
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -43,7 +55,7 @@ from typing import Callable, Iterable
 
 from . import actions, adb, config, images, mirror
 
-SOURCES = ("v4l2", "screenrecord")
+SOURCES = ("v4l2", "scrcpy", "screenrecord")
 
 # No cap by default: the person is watching the same capture in a window,
 # and a choppy window is worse than a busier ffmpeg.
@@ -52,8 +64,16 @@ DEFAULT_FPS: int | None = None
 # crisp at a fraction of a PNG's size.
 DEFAULT_QUALITY = 5
 
-# "Settled": nothing new for this long after the last change.
+# "Settled": nothing new for this long after the last change. Not shorter:
+# measured on a phone, animations pause for up to 0.35 s halfway through,
+# and settling there hands the agent a half-drawn screen.
 QUIET_SECONDS = 0.35
+
+# Android's three animation scales. Turned to 0 while live view runs - by
+# default, since they are most of the wait after every action - so what the
+# agent does lands at once instead of after a fade. Put back afterwards.
+ANIMATION_SETTINGS = ("window_animation_scale", "transition_animation_scale",
+                      "animator_duration_scale")
 # How long an action gets to show any change at all before we decide it did
 # not visibly do anything.
 CHANGE_SECONDS = 1.5
@@ -170,11 +190,24 @@ LOOPBACK_HELP = (
 )
 
 
+def scrcpy_problem() -> str | None:
+    """Why the ``scrcpy`` source cannot run here, or None if it can."""
+    if not hasattr(os, "mkfifo"):
+        return ("source='scrcpy' needs a POSIX named pipe, which Windows does not "
+                "have; use 'screenrecord'")
+    try:
+        mirror.preflight(window=False)
+    except adb.AdbError as exc:
+        return str(exc)
+    return None
+
+
 def pick_source(requested: str | None) -> tuple[str, str | None]:
     """Resolve ``auto`` and check the choice can work: ``(source, v4l2 device)``."""
     choice = (requested or "auto").lower()
     if choice not in ("auto", *SOURCES):
-        raise ValueError(f"unknown source {requested!r}: use auto, v4l2 or screenrecord")
+        raise ValueError(f"unknown source {requested!r}: "
+                         "use auto, v4l2, scrcpy or screenrecord")
 
     wanted = os.environ.get("ADBAI_V4L2")
     devices = [wanted] if wanted else loopback_devices()
@@ -187,15 +220,19 @@ def pick_source(requested: str | None) -> tuple[str, str | None]:
         if not devices:
             raise adb.AdbError(LOOPBACK_HELP)
         return "v4l2", devices[0]
+    if choice == "scrcpy":
+        problem = scrcpy_problem()
+        if problem:
+            raise adb.AdbError(problem)
+        return "scrcpy", None
 
     # auto: share scrcpy's capture when we can, since then the person and the
-    # agent are looking at literally the same frames.
-    if devices and not mirror.headless():
-        try:
-            mirror.scrcpy_path()
+    # agent are looking at literally the same frames; screenrecord is last
+    # because its final frame has to be fetched separately.
+    if scrcpy_problem() is None:
+        if devices and not mirror.headless():
             return "v4l2", devices[0]
-        except adb.AdbError:
-            pass
+        return "scrcpy", None
     return "screenrecord", None
 
 
@@ -238,6 +275,10 @@ def ffmpeg_command(ffmpeg: str, source: str, *, device: str | None = None,
         if not device:
             raise ValueError("v4l2 needs a device")
         cmd += ["-f", "v4l2", "-i", device]
+    elif source == "scrcpy":
+        if not device:
+            raise ValueError("scrcpy needs the pipe it records into")
+        cmd += ["-f", "matroska", "-i", device]
     elif source == "screenrecord":
         cmd += ["-f", "h264", "-i", "pipe:0"]
     else:
@@ -330,8 +371,10 @@ class LiveView:
 
     def __init__(self, serial: str | None, *, source: str = "auto", window: bool = True,
                  max_size: int = images.DEFAULT_MAX_SIZE, fps: int | None = DEFAULT_FPS,
-                 quality: int = DEFAULT_QUALITY) -> None:
+                 quality: int = DEFAULT_QUALITY, animations: bool = False) -> None:
         self.serial = serial
+        self.animations = animations
+        self._saved_animations: dict[str, str] | None = None
         self.requested = source
         self.window = window
         self.max_size = int(max_size)
@@ -352,6 +395,11 @@ class LiveView:
         self._mirror_owned = False
         self._error: str | None = None
         self._log = None
+        self._pipe_dir: str | None = None
+        self._scrcpy: subprocess.Popen | None = None
+        # screenrecord only: the newest frame came from the stream, so it may
+        # be the one before what is really on screen (see the module doc).
+        self._stale = False
 
     # -- lifecycle --
 
@@ -366,14 +414,36 @@ class LiveView:
                         f"at {time.strftime('%Y-%m-%d %H:%M:%S')}\n".encode())
         self._log.flush()
 
+        if not self.animations:
+            self._animations_off()
+        try:
+            actions.keep_shell(self.serial)
+        except (OSError, adb.AdbError) as exc:
+            self._note(f"no kept shell, taps go through plain adb: {exc}")
         if self.source == "v4l2":
             self._start_scrcpy_sink()
+        pipe = None
+        if self.source == "scrcpy":
+            self._pipe_dir = tempfile.mkdtemp(prefix="adbai-live-")
+            pipe = os.path.join(self._pipe_dir, "screen.mkv")
+            os.mkfifo(pipe)
 
-        cmd = ffmpeg_command(ffmpeg, self.source, device=self.device,
+        cmd = ffmpeg_command(ffmpeg, self.source, device=pipe or self.device,
                              max_size=self.max_size, quality=self.quality)
         self.started_at = time.monotonic()
         if self.source == "v4l2":
             self._runner = self._spawn(lambda: self._run_v4l2(cmd), "adbai-live-v4l2")
+        elif self.source == "scrcpy":
+            assert pipe is not None
+            # ffmpeg first: opening a pipe waits for the other end, and scrcpy
+            # only opens it once the first frame is on its way.
+            self._launch_ffmpeg(cmd, stdin=subprocess.DEVNULL)
+            try:
+                self._start_scrcpy_recorder(pipe)
+            except Exception:
+                self.stop()
+                raise
+            self._runner = self._spawn(self._run_scrcpy, "adbai-live-scrcpy")
         else:
             self._launch_ffmpeg(cmd, stdin=subprocess.PIPE)
             self._runner = self._spawn(self._run_screenrecord_reader, "adbai-live-frames")
@@ -408,6 +478,46 @@ class LiveView:
             mirror.start(self.serial, window=False, audio=False, sink=True, extra=extra)
         self._mirror_owned = True
 
+    @property
+    def quiet(self) -> float:
+        """How long the screen must be still to count as settled."""
+        return QUIET_SECONDS
+
+    def _animations_off(self) -> None:
+        saved: dict[str, str] = {}
+        for name in ANIMATION_SETTINGS:
+            value = adb.shell(f"settings get global {name}", serial=self.serial).strip()
+            saved[name] = value if value and value != "null" else "1.0"
+        self._saved_animations = saved
+        for name in ANIMATION_SETTINGS:
+            adb.shell(f"settings put global {name} 0", serial=self.serial)
+        self._note("animations off: " + ", ".join(f"{k}={v}" for k, v in saved.items()))
+
+    def _animations_back(self) -> None:
+        saved, self._saved_animations = self._saved_animations, None
+        if not saved:
+            return
+        for name, value in saved.items():
+            try:
+                adb.shell(f"settings put global {name} {value}", serial=self.serial)
+            except adb.AdbError as exc:
+                self._note(f"could not put {name} back to {value}: {exc}")
+
+    def _start_scrcpy_recorder(self, pipe: str) -> None:
+        mirror.stop(self.serial)
+        window = self.window and not mirror.headless()
+        extra = ["--record-format=mkv"]
+        if self.fps and mirror.supports("--max-fps"):
+            extra += ["--max-fps", str(self.fps)]
+        title = " ".join(filter(None, ["adb-ai", self.serial, "(live)"]))
+        # With a window the person gets the full picture and ffmpeg scales it;
+        # without one, encoding small on the device is less to send.
+        self._scrcpy = mirror.start(self.serial, record=pipe, window=window, audio=False,
+                                    title=title if window else None,
+                                    max_size=None if window else (self.max_size or None),
+                                    extra=extra)
+        self._mirror_owned = True
+
     def _start_window(self) -> None:
         try:
             mirror.start(self.serial, title=" ".join(filter(None, ["adb-ai", self.serial])))
@@ -429,6 +539,11 @@ class LiveView:
                 proc.kill()
         if self._mirror_owned:
             mirror.stop(self.serial)
+        actions.drop_shell(self.serial)
+        self._animations_back()
+        if self._pipe_dir is not None:
+            shutil.rmtree(self._pipe_dir, ignore_errors=True)
+            self._pipe_dir = None
         with self._cond:
             self._cond.notify_all()
         if self._log is not None:
@@ -465,6 +580,7 @@ class LiveView:
                 with self._cond:
                     self._seq += 1
                     self._frame = Frame(self._seq, time.monotonic(), data)
+                    self._stale = self.source == "screenrecord"
                     self._cond.notify_all()
         proc.wait()
         return count
@@ -480,6 +596,35 @@ class LiveView:
         assert self._ffmpeg is not None
         self._read_frames(self._ffmpeg)
         self._fail("ffmpeg stopped - see " + str(log_path()))
+
+    def _run_scrcpy(self) -> None:
+        """Read frames until scrcpy stops recording into the pipe.
+
+        If scrcpy dies before it ever opens the pipe, ffmpeg would wait on it
+        forever; a watcher ends ffmpeg then, so the failure gets reported.
+        """
+        assert self._ffmpeg is not None and self._scrcpy is not None
+        ffmpeg, scrcpy = self._ffmpeg, self._scrcpy
+
+        def watch() -> None:
+            while not self._stop.is_set() and ffmpeg.poll() is None:
+                if scrcpy.poll() is not None:
+                    time.sleep(1.0)  # let ffmpeg finish what it was sent
+                    if ffmpeg.poll() is None:
+                        ffmpeg.terminate()
+                    return
+                time.sleep(0.3)
+
+        self._spawn(watch, "adbai-live-watch")
+        got = self._read_frames(ffmpeg)
+        if self._stop.is_set():
+            return
+        if got and self.window and not mirror.headless():
+            self._fail("the scrcpy window was closed, and live view with it. "
+                       "Start it again with adb_live.")
+        else:
+            self._fail(f"scrcpy stopped sending the screen - see {mirror.log_path()} "
+                       f"and {log_path()}")
 
     def _run_v4l2(self, cmd: list[str]) -> None:
         """Keep ffmpeg reading the loopback for as long as scrcpy feeds it.
@@ -578,6 +723,47 @@ class LiveView:
                 self._cond.wait(remaining)
             return self._frame
 
+    def current(self, timeout: float = 5.0) -> Frame:
+        """The newest frame, made right if the stream may be holding one back.
+
+        Instant from scrcpy and v4l2. From screenrecord, once the screen has
+        been still for a moment, a screencap replaces the frame the device's
+        encoder is sitting on.
+        """
+        frame = self.latest(timeout)
+        if self._stale and frame.age >= self.quiet:
+            return self.refresh()
+        return frame
+
+    def refresh(self) -> Frame:
+        """Replace a possibly held-back screenrecord frame with a screencap.
+
+        The frame keeps its sequence number: it is the same moment, seen
+        properly, not a change. A stream frame that arrived while the
+        screencap was being taken does not win over it: it is held back like
+        every screenrecord frame, so it shows an earlier moment than the
+        screencap does. Anything that arrives after this is newer, and
+        replaces it as usual.
+        """
+        with self._cond:
+            frame = self._frame
+            if frame is None or not self._stale:
+                return self.latest()
+        try:
+            png = adb.screencap(self.serial)
+        except adb.AdbError as exc:
+            self._note(f"could not refresh the last frame: {exc}")
+            return frame
+        data, mime = images.shrink(png, max_size=self.max_size, quality=self.quality,
+                                   above=0)
+        if mime != "image/jpeg":
+            self._note("could not turn the screencap into a JPEG; keeping the stream's frame")
+            return frame
+        with self._cond:
+            self._frame = Frame(self._seq, time.monotonic(), data)
+            self._stale = False
+            return self._frame
+
     def seq(self) -> int:
         with self._cond:
             return self._seq
@@ -595,7 +781,7 @@ class LiveView:
             return self._frame
 
     def wait_settled(self, after: int, *, change: float = CHANGE_SECONDS,
-                     quiet: float = QUIET_SECONDS,
+                     quiet: float | None = None,
                      timeout: float = SETTLE_TIMEOUT) -> tuple[Frame, str]:
         """After an action: wait for it to show, then for the screen to stop moving.
 
@@ -603,10 +789,12 @@ class LiveView:
         visibly happened) or ``moving`` (still changing at the timeout - a
         video, an animation).
         """
+        if quiet is None:
+            quiet = self.quiet
         began = time.monotonic()
         first = self.wait_change(after, change)
         if first is None:
-            return self.latest(), "unchanged"
+            return self.current(), "unchanged"
         with self._cond:
             while True:
                 self._raise_if_dead()
@@ -614,10 +802,11 @@ class LiveView:
                 frame = self._frame
                 assert frame is not None
                 if now - frame.at >= quiet:
-                    return frame, "settled"
+                    break
                 if now - began >= timeout:
                     return frame, "moving"
                 self._cond.wait(min(quiet - (now - frame.at), timeout - (now - began)))
+        return self.refresh() if self._stale else frame, "settled"
 
     def _raise_if_dead(self) -> None:
         if self._error:
@@ -644,12 +833,15 @@ class LiveView:
             "device": self.serial or "default device",
             "source": self.source,
             "v4l2_device": self.device,
+            "last_frame": ("from the stream - a screencap replaces it once the "
+                           "screen is still" if self._stale else "current"),
             "alive": self.alive,
             "error": self._error,
             "frames": self._seq,
             "last_frame_age_s": round(frame.age, 2) if frame else None,
             "uptime_s": round(time.monotonic() - self.started_at, 1),
             "window": mirror._key(self.serial) in mirror.running(),
+            "animations": "off until live view stops" if self._saved_animations else "as set",
         }
 
 
@@ -673,15 +865,28 @@ def get(serial: str | None) -> LiveView | None:
         return view
 
 
+_atexit_registered = False
+
+
 def start(serial: str | None, **options) -> LiveView:
     """Start a view, or hand back the one already running for this device."""
+    global _atexit_registered
+    if not _atexit_registered:
+        # Whatever happens to this process, the device gets its animations back.
+        atexit.register(stop_all)
+        _atexit_registered = True
     with _views_lock:
         view = _views.get(_key(serial))
         if view is not None and view.alive:
             return view
         if view is not None:
             view.stop()
-        view = LiveView(serial, **options).start()
+        view = LiveView(serial, **options)
+        try:
+            view.start()
+        except BaseException:
+            view.stop()
+            raise
         _views[_key(serial)] = view
         return view
 

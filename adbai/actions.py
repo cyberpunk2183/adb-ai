@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import queue
 import re
+import subprocess
+import threading
 import time
 from urllib.parse import quote
 
@@ -14,6 +17,139 @@ _SHELL_SAFE = re.compile(r"^[A-Za-z0-9 ._:/@%&?=+,#~\-]*$")
 def _quote(value: str) -> str:
     """Single-quote a value for the device's shell."""
     return "'" + value.replace("'", "'\\''") + "'"
+
+
+# ``input`` starts a fresh Java runtime on the device for every command, which
+# is most of half a second per tap. ``cmd input`` asks the running input
+# service instead: the same commands, a fifth of the time. Android versions
+# that predate it say so, and get ``input`` from then on.
+_CMD_INPUT: dict[str, bool] = {}
+_NO_CMD_INPUT = ("Can't find service", "No shell command implementation",
+                 "Unknown command")
+
+
+class KeptShell:
+    """One ``adb shell`` left open, so a tap is a line written, not a new adb.
+
+    Starting adb for every command costs a connection each time, and while the
+    device is busy encoding live view that cost swings from tens of
+    milliseconds to over a second. Live view keeps one of these per device.
+    """
+
+    def __init__(self, serial: str | None) -> None:
+        cmd = [adb.adb_path()] + (["-s", serial] if serial else []) + ["shell"]
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.STDOUT, bufsize=0, shell=False)
+        self._lines: queue.Queue[bytes] = queue.Queue()
+        self._lock = threading.Lock()
+        self._count = 0
+        threading.Thread(target=self._read, daemon=True, name="adbai-kept-shell").start()
+
+    def _read(self) -> None:
+        assert self.proc.stdout is not None
+        try:
+            for line in iter(self.proc.stdout.readline, b""):
+                self._lines.put(line)
+        except (OSError, ValueError):
+            pass  # closed under us by close()
+        self._lines.put(b"")
+
+    @property
+    def alive(self) -> bool:
+        return self.proc.poll() is None
+
+    def run(self, command: str, timeout: float = 15.0) -> str:
+        """Like ``adb.shell``: the output, or AdbError if the command failed."""
+        with self._lock:
+            self._count += 1
+            marker = f"__adbai_done_{self._count}__"
+            assert self.proc.stdin is not None
+            try:
+                self.proc.stdin.write(f"{command} 2>&1; echo {marker} $?\n".encode())
+                self.proc.stdin.flush()
+            except OSError as exc:
+                self.close()
+                raise adb.AdbError(f"the kept adb shell is gone: {exc}") from exc
+            out: list[str] = []
+            deadline = time.monotonic() + timeout
+            while True:
+                try:
+                    line = self._lines.get(timeout=max(0.0, deadline - time.monotonic()))
+                except queue.Empty:
+                    self.close()
+                    raise adb.AdbError(f"adb shell timed out after {timeout:g}s: {command}")
+                if not line:
+                    self.close()
+                    raise adb.AdbError("the kept adb shell ended")
+                text = line.decode("utf-8", "replace").replace("\r", "")
+                if text.startswith(marker):
+                    code = text[len(marker):].strip()
+                    result = "".join(out)
+                    if code != "0":
+                        raise adb.AdbError(f"adb shell {command} failed: "
+                                           f"{result.strip() or 'exit ' + code}")
+                    return result
+                out.append(text)
+
+    def close(self) -> None:
+        if self.proc.poll() is None:
+            try:
+                if self.proc.stdin is not None:
+                    self.proc.stdin.close()
+            except OSError:
+                pass
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:  # pragma: no cover
+                self.proc.kill()
+        if self.proc.stdout is not None:
+            try:
+                self.proc.stdout.close()
+            except OSError:  # pragma: no cover
+                pass
+
+
+_KEPT: dict[str, KeptShell] = {}
+
+
+def keep_shell(serial: str | None) -> None:
+    """Send this device's taps and keys through one open shell from now on."""
+    key = serial or ""
+    if key not in _KEPT or not _KEPT[key].alive:
+        _KEPT[key] = KeptShell(serial)
+
+
+def drop_shell(serial: str | None) -> None:
+    kept = _KEPT.pop(serial or "", None)
+    if kept is not None:
+        kept.close()
+
+
+def _shell(command: str, serial: str | None) -> str:
+    kept = _KEPT.get(serial or "")
+    if kept is not None:
+        if kept.alive:
+            return kept.run(command)
+        _KEPT.pop(serial or "", None)  # it died; plain adb from now on
+    return adb.shell(command, serial=serial)
+
+
+def send_input(args: str, serial: str | None = None) -> None:
+    """Run ``input <args>`` on the device the fastest way it allows."""
+    key = serial or ""
+    if _CMD_INPUT.get(key, True):
+        try:
+            out = _shell(f"cmd input {args}", serial)
+        except adb.AdbError as exc:
+            out = str(exc)
+            if not any(sign in out for sign in _NO_CMD_INPUT):
+                raise
+        if not (isinstance(out, str) and any(sign in out for sign in _NO_CMD_INPUT)):
+            _CMD_INPUT[key] = True
+            return
+        _CMD_INPUT[key] = False
+    _shell(f"input {args}", serial)
 
 
 def press(key: str, serial: str | None = None, repeat: int = 1,
@@ -40,9 +176,9 @@ def press_sequence(names: list[str], serial: str | None = None, repeat: int = 1,
         for index, code in enumerate(sent):
             if index:
                 time.sleep(pace_ms / 1000)
-            adb.shell(f"input keyevent {code}", serial=serial)
+            send_input(f"keyevent {code}", serial=serial)
     else:
-        adb.shell("input keyevent " + " ".join(sent), serial=serial)
+        send_input("keyevent " + " ".join(sent), serial=serial)
     return codes
 
 
@@ -53,7 +189,7 @@ def type_text(text: str, serial: str | None = None) -> None:
     and translate the characters it refuses to carry.
     """
     payload = text.replace("%", "%%").replace(" ", "%s")
-    adb.shell(f"input text {_quote(payload)}", serial=serial)
+    send_input(f"text {_quote(payload)}", serial=serial)
 
 
 # A screen does not change size unless someone rotates the device, and a
@@ -88,15 +224,15 @@ def screen_size(serial: str | None = None, *, fresh: bool = False) -> tuple[int,
 
 def tap(x: int, y: int, serial: str | None = None) -> str:
     """Tap a point. Phones are driven by touch; TVs by the d-pad."""
-    adb.shell(f"input tap {int(x)} {int(y)}", serial=serial)
+    send_input(f"tap {int(x)} {int(y)}", serial=serial)
     return f"tapped {int(x)},{int(y)}"
 
 
 def swipe(x1: int, y1: int, x2: int, y2: int, serial: str | None = None,
           duration_ms: int = 300) -> str:
     """Swipe between two points. Also a long press, when the points match."""
-    adb.shell(f"input swipe {int(x1)} {int(y1)} {int(x2)} {int(y2)} {int(duration_ms)}",
-              serial=serial)
+    send_input(f"swipe {int(x1)} {int(y1)} {int(x2)} {int(y2)} {int(duration_ms)}",
+               serial=serial)
     return f"swiped {int(x1)},{int(y1)} -> {int(x2)},{int(y2)} in {int(duration_ms)}ms"
 
 

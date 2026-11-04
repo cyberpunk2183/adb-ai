@@ -336,12 +336,20 @@ def tool_live(args: dict[str, Any]) -> dict[str, Any]:
                                "window": args.get("window", True)}
     if args.get("max_size") is not None:
         options["max_size"] = int(args["max_size"])
+    if args.get("animations") is True:
+        options["animations"] = True
     view = live.start(serial, **options)
-    frame = view.latest(timeout=10.0)
-    who = ("the person's scrcpy window and you are looking at the same capture"
-           if view.source == "v4l2" else
-           "frames come from the device's screenrecord"
-           + ("; the person has a scrcpy window of their own" if view.status()["window"] else ""))
+    frame = view.current(timeout=10.0)
+    status = view.status()
+    if view.source in ("v4l2", "scrcpy") and status["window"] and view.window:
+        who = "the person's scrcpy window and you are looking at the same capture"
+    elif view.source == "scrcpy":
+        who = "frames come from scrcpy, with no window"
+    else:
+        who = ("frames come from the device's screenrecord; once the screen is "
+               "still, a screencap stands in for the last frame, so answers after "
+               "an action take a second or two longer"
+               + ("; the person has a scrcpy window of their own" if status["window"] else ""))
     return {"content": _frame_content(view, frame, (
         f"live view on via {view.source} - {who}. adb_look shows the newest frame "
         "at once; look=true on an action shows the screen once it settles; "
@@ -355,7 +363,7 @@ def tool_look(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": _screenshot_content(
             serial, args, "live view is off, so this is a fresh screenshot - "
                           "adb_live makes looking instant")}
-    frame = view.latest()
+    frame = view.current()
     return {"content": _frame_content(view, frame, "live")}
 
 
@@ -367,7 +375,7 @@ def tool_wait_change(args: dict[str, Any]) -> dict[str, Any]:
     timeout = float(args.get("timeout_seconds") or 10)
     before = view.seq()
     if view.wait_change(before, timeout) is None:
-        frame = view.latest()
+        frame = view.current()
         return {"content": _frame_content(view, frame, f"no change in {timeout:g}s")}
     frame, how = view.wait_settled(before, change=0)
     return {"content": _frame_content(view, frame, f"the screen changed - {how}")}
@@ -673,12 +681,20 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": _schema({
             "action": {"type": "string", "enum": ["start", "stop", "status"],
                        "description": "default start"},
-            "source": {"type": "string", "enum": ["auto", "v4l2", "screenrecord"],
-                       "description": "where the video comes from; auto prefers v4l2"},
+            "source": {"type": "string", "enum": ["auto", "v4l2", "scrcpy", "screenrecord"],
+                       "description": "where the video comes from; auto picks the best "
+                                      "that works here (v4l2, then scrcpy, then "
+                                      "screenrecord)"},
             "window": {"type": "boolean",
                        "description": "open a scrcpy window for the person, default true"},
             "max_size": {"type": "integer",
                          "description": "longest side of the frames you get, default 1280"},
+            "animations": {"type": "boolean",
+                           "description": "default false: the device's animations are "
+                                          "off while live view runs, so every action "
+                                          "shows at once - over twice as fast. They are "
+                                          "put back on stop. true leaves them on, if the "
+                                          "user wants the device to look as usual"},
         }),
         "handler": tool_live,
     },

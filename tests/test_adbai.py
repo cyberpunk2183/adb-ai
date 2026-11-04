@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import subprocess
 import sys
 import threading
 import time
@@ -226,13 +227,55 @@ class TestShellGate(unittest.TestCase):
         self.assertIn("switched off", result["content"][0]["text"])
 
 
+class TestFastInput(unittest.TestCase):
+    def setUp(self):
+        actions._CMD_INPUT.clear()
+        self.addCleanup(actions._CMD_INPUT.clear)
+
+    def test_cmd_input_is_tried_first(self):
+        with mock.patch.object(actions.adb, "shell", return_value="") as shell:
+            actions.tap(1, 2, serial="new")
+        shell.assert_called_once_with("cmd input tap 1 2", serial="new")
+
+    def test_an_old_android_falls_back_to_input_and_remembers(self):
+        def shell(cmd, serial=None):
+            if cmd.startswith("cmd "):
+                return "cmd: Can't find service: input\n"
+            return ""
+
+        with mock.patch.object(actions.adb, "shell", side_effect=shell) as sh:
+            actions.tap(1, 2, serial="old")
+            actions.tap(3, 4, serial="old")
+        self.assertEqual([c[0][0] for c in sh.call_args_list],
+                         ["cmd input tap 1 2", "input tap 1 2", "input tap 3 4"])
+
+    def test_a_refusal_as_an_error_also_falls_back(self):
+        calls = []
+
+        def shell(cmd, serial=None):
+            calls.append(cmd)
+            if cmd.startswith("cmd "):
+                raise adb.AdbError("adb shell failed: No shell command implementation.")
+            return ""
+
+        with mock.patch.object(actions.adb, "shell", side_effect=shell):
+            actions.press("home", serial="old2")
+        self.assertEqual(calls[-1], "input keyevent KEYCODE_HOME")
+
+    def test_other_errors_are_not_swallowed(self):
+        with mock.patch.object(actions.adb, "shell",
+                               side_effect=adb.AdbError("device offline")):
+            with self.assertRaises(adb.AdbError):
+                actions.tap(1, 2, serial="gone")
+
+
 class TestTouch(unittest.TestCase):
     def test_tap_and_swipe_build_input_commands(self):
         with mock.patch.object(actions.adb, "shell") as shell:
             actions.tap(603, 1311, serial="x")
             actions.swipe(360, 1200, 360, 400, serial="x", duration_ms=250)
-        self.assertEqual(shell.call_args_list[0][0][0], "input tap 603 1311")
-        self.assertEqual(shell.call_args_list[1][0][0], "input swipe 360 1200 360 400 250")
+        self.assertEqual(shell.call_args_list[0][0][0], "cmd input tap 603 1311")
+        self.assertEqual(shell.call_args_list[1][0][0], "cmd input swipe 360 1200 360 400 250")
 
     def test_screen_size(self):
         with mock.patch.object(actions.adb, "shell",
@@ -244,7 +287,7 @@ class TestTouch(unittest.TestCase):
              mock.patch.object(actions.adb, "shell") as shell:
             actions.scroll("down", serial="x")
         sent = shell.call_args[0][0]
-        self.assertTrue(sent.startswith("input swipe 360 "))
+        self.assertTrue(sent.startswith("cmd input swipe 360 "))
 
     def test_scroll_rejects_nonsense(self):
         with mock.patch.object(actions, "screen_size", return_value=(720, 1640)):
@@ -490,7 +533,7 @@ class TestFewerRoundtrips(unittest.TestCase):
         with mock.patch.object(actions.adb, "shell") as shell:
             actions.press_sequence(["down", "down", "ok"], serial="tv")
         shell.assert_called_once_with(
-            "input keyevent KEYCODE_DPAD_DOWN KEYCODE_DPAD_DOWN KEYCODE_DPAD_CENTER",
+            "cmd input keyevent KEYCODE_DPAD_DOWN KEYCODE_DPAD_DOWN KEYCODE_DPAD_CENTER",
             serial="tv")
 
     def test_repeat_also_goes_in_one_call(self):
@@ -862,14 +905,42 @@ class TestLiveSource(unittest.TestCase):
     def test_auto_shares_scrcpys_capture_when_it_can(self):
         with mock.patch.object(live, "loopback_devices", return_value=["/dev/video2"]), \
              mock.patch.object(live.mirror, "headless", return_value=False), \
-             mock.patch.object(live.mirror, "scrcpy_path", return_value="/usr/bin/scrcpy"), \
+             mock.patch.object(live, "scrcpy_problem", return_value=None), \
              mock.patch.dict(live.os.environ, {}, clear=False):
             live.os.environ.pop("ADBAI_V4L2", None)
             self.assertEqual(live.pick_source("auto"), ("v4l2", "/dev/video2"))
 
+    def test_auto_records_through_scrcpy_without_a_loopback(self):
+        with mock.patch.object(live, "loopback_devices", return_value=[]), \
+             mock.patch.object(live, "scrcpy_problem", return_value=None):
+            self.assertEqual(live.pick_source(None), ("scrcpy", None))
+
+    def test_auto_records_through_scrcpy_when_there_is_no_window_for_v4l2(self):
+        with mock.patch.object(live, "loopback_devices", return_value=["/dev/video2"]), \
+             mock.patch.object(live.mirror, "headless", return_value=True), \
+             mock.patch.object(live, "scrcpy_problem", return_value=None):
+            self.assertEqual(live.pick_source(None), ("scrcpy", None))
+
     def test_auto_falls_back_to_screenrecord(self):
-        with mock.patch.object(live, "loopback_devices", return_value=[]):
+        with mock.patch.object(live, "loopback_devices", return_value=["/dev/video2"]), \
+             mock.patch.object(live, "scrcpy_problem", return_value="no scrcpy"):
             self.assertEqual(live.pick_source(None), ("screenrecord", None))
+
+    def test_asking_for_scrcpy_where_it_cannot_run_says_why(self):
+        with mock.patch.object(live, "scrcpy_problem", return_value="not on Termux"):
+            with self.assertRaises(adb.AdbError) as caught:
+                live.pick_source("scrcpy")
+        self.assertIn("Termux", str(caught.exception))
+
+    def test_scrcpy_source_needs_a_named_pipe(self):
+        with mock.patch.object(live, "os", mock.Mock(spec=[])):  # no mkfifo, as on Windows
+            self.assertIn("Windows", live.scrcpy_problem())
+
+    def test_scrcpy_problem_passes_on_termuxs_refusal(self):
+        with mock.patch.object(live.mirror, "preflight",
+                               side_effect=adb.AdbError("scrcpy does not work from Termux")), \
+             mock.patch.object(live.os, "mkfifo", create=True):
+            self.assertIn("Termux", live.scrcpy_problem())
 
     def test_asking_for_v4l2_without_a_loopback_says_how_to_get_one(self):
         with mock.patch.object(live, "loopback_devices", return_value=[]), \
@@ -1059,3 +1130,162 @@ class TestLiveV4l2Supervisor(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLiveScrcpyPipe(unittest.TestCase):
+    def test_ffmpeg_reads_the_pipe_scrcpy_records_into(self):
+        with mock.patch.object(live, "_fps_mode", return_value=["-fps_mode", "vfr"]):
+            cmd = live.ffmpeg_command("ffmpeg", "scrcpy", device="/tmp/x/screen.mkv")
+        i = cmd.index("-i")
+        self.assertEqual(cmd[i - 2:i + 2], ["-f", "matroska", "-i", "/tmp/x/screen.mkv"])
+
+    def test_the_pipe_is_required(self):
+        with self.assertRaises(ValueError):
+            live.ffmpeg_command("ffmpeg", "scrcpy")
+
+
+def _view_with_frame(source: str, data: bytes = b"stream", age: float = 1.0) -> live.LiveView:
+    view = live.LiveView("serial", source=source)
+    view.source = source
+    view._runner = mock.Mock(is_alive=lambda: True)
+    view._seq = 1
+    view._frame = live.Frame(1, time.monotonic() - age, data)
+    view._stale = source == "screenrecord"
+    return view
+
+
+class TestLiveHeldFrame(unittest.TestCase):
+    """screenrecord's encoder sits on the last frame of an animation; a
+    screencap has to stand in for it once the screen is still."""
+
+    def setUp(self):
+        self.shot = mock.patch.object(live.adb, "screencap", return_value=b"png").start()
+        mock.patch.object(live.images, "shrink",
+                          return_value=(b"fresh", "image/jpeg")).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def test_a_still_screenrecord_frame_is_replaced_by_a_screencap(self):
+        view = _view_with_frame("screenrecord")
+        frame = view.current()
+        self.assertEqual(frame.data, b"fresh")
+        self.assertEqual(frame.seq, 1)  # the same moment, not a change
+        self.assertEqual(view.current().data, b"fresh")
+        self.shot.assert_called_once()  # and only once
+
+    def test_a_frame_still_arriving_is_not_replaced(self):
+        view = _view_with_frame("screenrecord", age=0.0)
+        self.assertEqual(view.current().data, b"stream")
+        self.shot.assert_not_called()
+
+    def test_scrcpy_frames_are_trusted_as_they_are(self):
+        view = _view_with_frame("scrcpy")
+        self.assertEqual(view.current().data, b"stream")
+        self.shot.assert_not_called()
+
+    def test_settled_on_screenrecord_returns_the_screencap(self):
+        view = _view_with_frame("screenrecord")
+        frame, how = view.wait_settled(0, quiet=0.05)
+        self.assertEqual((frame.data, how), (b"fresh", "settled"))
+
+    def test_settled_on_scrcpy_returns_the_streamed_frame(self):
+        view = _view_with_frame("scrcpy")
+        frame, how = view.wait_settled(0, quiet=0.05)
+        self.assertEqual((frame.data, how), (b"stream", "settled"))
+
+    def test_the_screencap_wins_over_a_held_frame_that_arrived_meanwhile(self):
+        view = _view_with_frame("screenrecord")
+
+        def screencap(serial):
+            with view._cond:  # the screen moved while we were fetching
+                view._seq = 2
+                view._frame = live.Frame(2, time.monotonic(), b"newer")
+            return b"png"
+
+        self.shot.side_effect = screencap
+        frame = view.refresh()
+        self.assertEqual((frame.data, frame.seq), (b"fresh", 2))
+        self.assertEqual(view.status()["last_frame"], "current")
+
+    def test_a_failed_screencap_keeps_the_stream_frame(self):
+        self.shot.side_effect = adb.AdbError("device gone")
+        view = _view_with_frame("screenrecord")
+        self.assertEqual(view.refresh().data, b"stream")
+
+
+class TestLiveAnimations(unittest.TestCase):
+    def test_animations_go_off_and_come_back_as_they_were(self):
+        values = {"window_animation_scale": "0.5", "transition_animation_scale": "1.0",
+                  "animator_duration_scale": "null"}
+        puts = []
+
+        def shell(cmd, serial=None):
+            parts = cmd.split()
+            if parts[1] == "get":
+                return values[parts[3]] + "\n"
+            puts.append((parts[3], parts[4]))
+            return ""
+
+        view = live.LiveView("s", animations=False)
+        with mock.patch.object(live.adb, "shell", side_effect=shell):
+            view._animations_off()
+            self.assertEqual(puts, [(n, "0") for n in live.ANIMATION_SETTINGS])
+            puts.clear()
+            view.stop()
+        self.assertEqual(dict(puts), {"window_animation_scale": "0.5",
+                                      "transition_animation_scale": "1.0",
+                                      "animator_duration_scale": "1.0"})
+
+    def test_animations_are_off_by_default(self):
+        self.assertFalse(live.LiveView("s").animations)
+
+    def test_keeping_animations_leaves_the_device_alone(self):
+        view = live.LiveView("s", animations=True)
+        with mock.patch.object(live.adb, "shell") as shell:
+            view.stop()
+        shell.assert_not_called()
+
+    def test_settling_outlasts_the_pauses_inside_an_animation(self):
+        # Measured on a phone: up to 0.35 s without a frame mid-animation.
+        self.assertGreaterEqual(_view_with_frame("scrcpy").quiet, 0.35)
+
+
+class TestKeptShell(unittest.TestCase):
+    """A real shell process stands in for 'adb shell', so the protocol is tested."""
+
+    def setUp(self):
+        mock.patch.object(actions.adb, "adb_path", return_value="sh").start()
+        self.addCleanup(mock.patch.stopall)
+        # 'sh -s serial shell' would be wrong; serial None gives 'sh shell'.
+        real = subprocess.Popen
+
+        def popen(cmd, **kw):
+            return real(["sh"], **kw)
+
+        mock.patch.object(actions.subprocess, "Popen", side_effect=popen).start()
+        actions.keep_shell(None)
+        self.addCleanup(actions.drop_shell, None)
+
+    def test_commands_go_through_the_kept_shell(self):
+        self.assertEqual(actions._shell("echo one; echo two", None), "one\ntwo\n")
+        self.assertEqual(actions._shell("echo three", None), "three\n")
+
+    def test_a_failing_command_raises_with_its_output(self):
+        with self.assertRaises(adb.AdbError) as caught:
+            actions._shell("echo nope; false", None)
+        self.assertIn("nope", str(caught.exception))
+        self.assertEqual(actions._shell("echo still here", None), "still here\n")
+
+    def test_taps_use_it(self):
+        with mock.patch.object(actions.adb, "shell") as plain:
+            actions._CMD_INPUT[""] = True
+            # 'cmd' does not exist here; the shell's error is not a refusal we
+            # know, so it surfaces - proving the kept shell, not adb, ran it.
+            with self.assertRaises(adb.AdbError):
+                actions.tap(1, 2)
+        plain.assert_not_called()
+
+    def test_a_dead_shell_falls_back_to_plain_adb(self):
+        actions._KEPT[""].close()
+        with mock.patch.object(actions.adb, "shell", return_value="ok") as plain:
+            self.assertEqual(actions._shell("echo x", None), "ok")
+        plain.assert_called_once()
