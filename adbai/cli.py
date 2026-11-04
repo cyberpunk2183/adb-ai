@@ -13,7 +13,9 @@ from . import (__version__, actions, adb, apps, config, images, keys, live, mirr
 
 
 def _out(message: str) -> None:
-    print(message)
+    # Flushed: "adb-ai live | ..." and a log file must see each line as it
+    # happens, not a buffer's worth when the process is stopped.
+    print(message, flush=True)
 
 
 def _json(payload: object) -> None:
@@ -388,7 +390,8 @@ def cmd_live(args: argparse.Namespace) -> int:
     how fast, before an agent depends on it."""
     serial = target.resolve(args.device)
     view = live.start(serial, source=args.source, window=not args.no_window,
-                      max_size=args.max_size, fps=args.fps)
+                      max_size=args.max_size, fps=args.fps,
+                      animations=args.keep_animations)
     out = Path(args.out) if args.out else None
     _out(f"live view of {serial} via {view.source}"
          + (f" ({view.device})" if view.device else "")
@@ -624,12 +627,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("live", cmd_live, "stream the screen for an agent to see (needs ffmpeg)")
     p.add_argument("--source", choices=["auto", *live.SOURCES], default="auto",
-                   help="v4l2 shares scrcpy's capture (Linux, v4l2loopback); "
+                   help="v4l2 shares scrcpy's capture through v4l2loopback (Linux); "
+                        "scrcpy records into a pipe (Linux, macOS); "
                         "screenrecord works everywhere")
     p.add_argument("--no-window", action="store_true",
                    help="no scrcpy window, just the frames")
     p.add_argument("--max-size", type=int, default=images.DEFAULT_MAX_SIZE, metavar="PX")
     p.add_argument("--fps", type=int, metavar="N", help="cap scrcpy's frame rate")
+    p.add_argument("--keep-animations", action="store_true",
+                   help="leave the device's animations on; by default they are off "
+                        "while live view runs, so every action shows at once, and "
+                        "put back when it stops")
     p.add_argument("--out", metavar="FILE", help="keep the newest frame in this .jpg")
     p.add_argument("--seconds", type=float, metavar="N", help="stop after N seconds")
 

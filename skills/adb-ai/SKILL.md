@@ -96,10 +96,17 @@ shows up as one element with nothing in it. Use `shot` for those.
 ## Live view: watching along with the user
 
 `adb-ai live` streams the screen while you work, so you look at frames instead
-of asking for screenshots. With the v4l2loopback kernel module loaded it shares
-the capture of the scrcpy window the user is watching - you both see the same
-picture; without it, it streams the device's `screenrecord` and the user gets
-their own window. It needs ffmpeg; `adb-ai doctor` says which mode you will get.
+of asking for screenshots. Where scrcpy runs (Linux, macOS) it shares the
+capture of the scrcpy window the user is watching - you both see the same
+picture. On Windows and Termux it streams the device's `screenrecord` instead;
+there the frame after an action comes from a screencap once the screen is
+still, so answers take a second or two longer. It needs ffmpeg; `adb-ai doctor`
+says which mode you will get.
+
+While live view runs the device's animations are off, so each action shows at
+once; they come back when it stops. Tell the user, since the device looks a
+little different meanwhile; `animations: true` on `adb_live` (or
+`adb-ai live --keep-animations`) leaves them on.
 
 Through the MCP server it is `adb_live`, then `adb_look` for the newest frame,
 `look: true` on any action to get the screen the moment it settles, and
